@@ -21,6 +21,8 @@ const cycle = <K extends 'layout' | 'visual'>(key: K, values: string[]) => {
 }
 const coverSize = computed(() => np.value.layout == 'center' ? 176 : np.value.visual == 'ring' ? 270 : 300)
 const ring = computed(() => np.value.visual == 'ring')
+/** 唱过的字用纯白点亮（页面底色是封面的颜色，白字最清楚） */
+const WHITE = ['#ffffff', '#ffffff']
 
 const lyricEl = ref<HTMLElement | null>(null)
 let userScrollAt = 0
@@ -94,6 +96,8 @@ const searchSinger = () => {
       <div class="scrim" />
       <!-- 两团慢慢漂的彩色光：给玻璃面板后面一点可以「透」出来的东西 -->
       <div class="orb a" /><div class="orb b" />
+      <!-- 整页是一整块玻璃：高光、斜向反光、细磨砂颗粒和一圈亮边 -->
+      <div class="sheet" />
       <header>
         <button class="icon-btn" title="收起" @click="player.showNowPlaying = false"><Icon name="down" :size="22" /></button>
         <button class="pill" title="切换布局：封面在左侧 / 封面居中在上" @click="cycle('layout', ['side', 'center'])">{{ LAYOUT_NAME[np.layout] }}</button>
@@ -102,7 +106,7 @@ const searchSinger = () => {
       <!-- 波浪 / 频谱铺在页面底部 -->
       <div v-if="np.visual == 'wave' || np.visual == 'bars'" class="viz-bottom" :class="np.visual"><Visualizer :type="np.visual" :playing="player.playing" /></div>
       <div class="content" :class="['l-' + np.layout, { ring }]">
-        <div class="left glass">
+        <div class="left">
           <div class="cover-wrap" :style="{ width: coverSize + 'px', height: coverSize + 'px' }">
             <!-- 环形律动围着封面转 -->
             <div v-if="ring" class="viz-ring"><Visualizer type="ring" :playing="player.playing" :radius="coverSize / 2" /></div>
@@ -122,7 +126,7 @@ const searchSinger = () => {
             <button class="icon-btn" title="定位：回到这首歌所在的列表" @click="locate"><Icon name="locate" :size="21" /></button>
           </div>
         </div>
-        <div class="right glass">
+        <div class="right">
           <div ref="lyricEl" class="lyric" :class="{ browsing }" @wheel.passive="onWheel">
             <template v-if="player.lyric.length">
               <div class="pad" />
@@ -135,7 +139,7 @@ const searchSinger = () => {
                   title="点击跳转到这一句" @click="userScrollAt = 0; browsing = false; seek(line.time)"
                 >
                   <div class="txt">
-                    <KaraokeLine :text="line.text" :words="line.words" :start="line.time" :dur="line.dur" :active="i == player.lyricIndex" :get-time="getTime" />
+                    <KaraokeLine :text="line.text" :words="line.words" :start="line.time" :dur="line.dur" :active="i == player.lyricIndex" :get-time="getTime" :stops="WHITE" />
                   </div>
                   <div v-if="line.trans && settings.showTranslation" class="trans">{{ line.trans }}</div>
                 </div>
@@ -214,28 +218,40 @@ header .pill:hover { color: var(--accent); background: var(--panel-strong); }
 .no-lyric { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text3); font-size: 16px; }
 .rise-enter-active, .rise-leave-active { transition: transform .32s cubic-bezier(.2, .8, .2, 1), opacity .25s; }
 .rise-enter-from, .rise-leave-to { transform: translateY(40px); opacity: 0; }
-/* ---------- 玻璃材质 ---------- */
-.bg { opacity: .82; filter: blur(60px) saturate(1.9); }
-.scrim { background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 26%, transparent), color-mix(in srgb, var(--bg) 52%, transparent)); }
-.orb { position: absolute; width: 46vw; height: 46vw; border-radius: 50%; filter: blur(70px); opacity: .5; pointer-events: none; }
-.orb.a { left: -10vw; top: -14vw; background: radial-gradient(circle, #46d6f0 0%, transparent 68%); animation: drift-a 26s ease-in-out infinite alternate; }
-.orb.b { right: -12vw; bottom: -16vw; background: radial-gradient(circle, #9a5cff 0%, transparent 68%); animation: drift-b 32s ease-in-out infinite alternate; }
+/* ---------- 整页玻璃 ----------
+   不再分成两块面板：整个页面就是一块透亮的玻璃，后面是封面颜色的光。
+   页面里的文字统一用白色（不跟随浅色 / 深色主题），这样不用再盖一层发白的雾。 */
+.now {
+  --text: #fff; --text2: rgba(255, 255, 255, 0.74); --text3: rgba(255, 255, 255, 0.52);
+  --hover: rgba(255, 255, 255, 0.1); --card: rgba(255, 255, 255, 0.13); --panel-strong: rgba(255, 255, 255, 0.2); --border: rgba(255, 255, 255, 0.22);
+  color: var(--text); background: linear-gradient(135deg, #1b2b4d, #3b2558);
+}
+.bg { opacity: 1; filter: blur(58px) saturate(1.95) brightness(0.9); }
+.scrim { background: linear-gradient(180deg, rgba(8, 10, 24, 0.08), rgba(8, 10, 24, 0.3)); }
+.orb { position: absolute; width: 44vw; height: 44vw; border-radius: 50%; filter: blur(80px); opacity: .34; mix-blend-mode: screen; pointer-events: none; }
+.orb.a { left: -10vw; top: -16vw; background: radial-gradient(circle, #46d6f0 0%, transparent 66%); animation: drift-a 26s ease-in-out infinite alternate; }
+.orb.b { right: -12vw; bottom: -18vw; background: radial-gradient(circle, #9a5cff 0%, transparent 66%); animation: drift-b 32s ease-in-out infinite alternate; }
 @keyframes drift-a { to { transform: translate(16vw, 12vw) scale(1.15); } }
 @keyframes drift-b { to { transform: translate(-18vw, -10vw) scale(0.9); } }
-.glass {
-  border-radius: 30px;
-  background: linear-gradient(135deg, color-mix(in srgb, var(--panel-strong) 46%, transparent), color-mix(in srgb, var(--panel-strong) 16%, transparent));
-  border: 1px solid rgba(255, 255, 255, 0.3);
-  box-shadow: 0 24px 70px rgba(20, 30, 70, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -1px 0 rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(30px) saturate(1.7);
+.sheet {
+  position: absolute; inset: 0; pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.17) 0, rgba(255, 255, 255, 0.04) 24%, transparent 48%),
+    linear-gradient(118deg, transparent 32%, rgba(255, 255, 255, 0.1) 43%, rgba(255, 255, 255, 0.02) 52%, transparent 62%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.38), inset 1px 0 0 rgba(255, 255, 255, 0.12), inset -1px 0 0 rgba(255, 255, 255, 0.12), inset 0 -60px 90px -60px rgba(0, 0, 0, 0.16);
 }
-:global(html[data-theme='dark'] .now .glass) { border-color: rgba(255, 255, 255, 0.12); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.14); }
-.content { gap: 22px; padding: 4px 36px 26px; }
-.left.glass { padding: 26px 22px; }
-.right.glass { padding: 6px 14px; overflow: hidden; }
-header .pill { background: color-mix(in srgb, var(--panel-strong) 40%, transparent); border-color: rgba(255, 255, 255, 0.3); backdrop-filter: blur(20px); }
-.acts .icon-btn { background: color-mix(in srgb, var(--panel-strong) 55%, transparent); border: 1px solid rgba(255, 255, 255, 0.28); }
-/* 封面居中：上面的封面不要面板，只有歌词是一块玻璃 */
-.l-center .left.glass { background: none; border: 0; box-shadow: none; backdrop-filter: none; padding: 0; }
-.l-center .right.glass { margin-bottom: 4px; }
+.content { gap: 28px; padding: 0 48px 24px; }
+header .icon-btn { color: var(--text2); }
+header .pill { background: rgba(255, 255, 255, 0.12); border-color: rgba(255, 255, 255, 0.22); backdrop-filter: blur(16px); }
+header .pill:hover { color: #fff; background: rgba(255, 255, 255, 0.22); }
+.big-cover { box-shadow: 0 26px 70px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.14); }
+.name { text-shadow: 0 2px 14px rgba(0, 0, 0, 0.25); }
+.singer:hover { color: #fff; text-decoration: underline; }
+.acts .icon-btn { background: rgba(255, 255, 255, 0.13); border: 1px solid rgba(255, 255, 255, 0.2); color: #fff; backdrop-filter: blur(14px); }
+.acts .icon-btn:hover { background: rgba(255, 255, 255, 0.26); color: #fff; }
+.line { text-shadow: 0 2px 16px rgba(0, 0, 0, 0.18); }
+.line.on { --dim: rgba(255, 255, 255, 0.4); }
+.dots i { background: #fff; }
+.l-center .right { margin-bottom: 4px; }
 </style>
