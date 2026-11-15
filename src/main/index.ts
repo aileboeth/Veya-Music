@@ -90,7 +90,7 @@ const showMain = () => {
 }
 
 // ---------------- 桌面歌词 ----------------
-const lyricConf = () => ({ fontSize: 30, locked: false, color: 'aurora', ...(settings().desktopLyric ?? {}) })
+const lyricConf = () => ({ fontSize: 30, locked: false, color: 'aurora', mode: 'single', align: 'center', effect: 'fill', ...(settings().desktopLyric ?? {}) })
 const saveLyricConf = (patch: any) => {
   const s = settings()
   s.desktopLyric = { ...lyricConf(), ...patch }
@@ -316,6 +316,19 @@ const api: Record<string, (...args: any[]) => any> = {
     updateTray()
   },
   'lyric.push': (data: any) => { sendLyric('lyric:data', data) },
+  /** 把桌面歌词摆到所在屏幕的顶部 / 底部 / 正中（水平居中） */
+  'lyric.place': (where: 'top' | 'bottom' | 'middle') => {
+    if (!lyricWin || lyricWin.isDestroyed()) openLyricWindow()
+    const win = lyricWin!
+    const b = win.getBounds()
+    const area = screen.getDisplayMatching(b).workArea
+    const y = where == 'top' ? area.y + 24 : where == 'middle' ? area.y + Math.round((area.height - b.height) / 2) : area.y + area.height - b.height - 40
+    // 用设置里记的宽高，而不是 getBounds 读回来的（缩放不是 100% 时每读写一次会大 1 像素）
+    const conf = lyricConf() as any
+    const x = Math.round(area.x + (area.width - b.width) / 2)
+    win.setBounds({ x, y, width: conf.width ?? 900, height: conf.height ?? 150 })
+    saveLyricConf({ x, y })
+  },
   'lyric.ready': () => { sendMain('lyric:request') },
   'lyric.close': closeLyricWindow,
   'lyric.command': (cmd: string) => { sendMain('player:command', cmd) },

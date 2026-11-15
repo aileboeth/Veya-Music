@@ -173,6 +173,7 @@ const clearStats = async() => {
   toast('听歌记录已清除')
 }
 const setLyric = (patch: Record<string, any>) => void api('lyric.setConf', patch)
+const placeLyric = (where: string) => void api('lyric.place', where)
 </script>
 
 <template>
@@ -318,6 +319,37 @@ const setLyric = (patch: Record<string, any>) => void api('lyric.setConf', patch
           <button :class="{ on: settings.desktopLyric.color == 'white' }" @click="setLyric({ color: 'white' })">纯白</button>
           <button :class="{ on: settings.desktopLyric.color == 'gold' }" @click="setLyric({ color: 'gold' })">暖金</button>
           <button :class="{ on: settings.desktopLyric.color == 'pink' }" @click="setLyric({ color: 'pink' })">樱粉</button>
+        </div>
+      </div>
+      <div class="item">
+        <div><b>动效</b><span>逐字填色：唱到哪个字，哪个字被点亮并轻轻抬起；逐字跳动：每个字开唱时跳一下</span></div>
+        <div class="tabs">
+          <button :class="{ on: (settings.desktopLyric.effect ?? 'fill') == 'fill' }" @click="setLyric({ effect: 'fill' })">逐字填色</button>
+          <button :class="{ on: settings.desktopLyric.effect == 'bounce' }" @click="setLyric({ effect: 'bounce' })">逐字跳动</button>
+          <button :class="{ on: settings.desktopLyric.effect == 'none' }" @click="setLyric({ effect: 'none' })">静态</button>
+        </div>
+      </div>
+      <div class="item">
+        <div><b>显示方式</b><span>单行：当前这句 + 翻译或下一句；双行交错：两句一左一右轮流唱，像 KTV</span></div>
+        <div class="tabs">
+          <button :class="{ on: (settings.desktopLyric.mode ?? 'single') == 'single' }" @click="setLyric({ mode: 'single' })">单行</button>
+          <button :class="{ on: settings.desktopLyric.mode == 'double' }" @click="setLyric({ mode: 'double' })">双行交错</button>
+        </div>
+      </div>
+      <div class="item">
+        <div><b>对齐</b><span>单行显示时歌词靠哪一边</span></div>
+        <div class="tabs">
+          <button :class="{ on: settings.desktopLyric.align == 'left' }" @click="setLyric({ align: 'left' })">居左</button>
+          <button :class="{ on: (settings.desktopLyric.align ?? 'center') == 'center' }" @click="setLyric({ align: 'center' })">居中</button>
+          <button :class="{ on: settings.desktopLyric.align == 'right' }" @click="setLyric({ align: 'right' })">居右</button>
+        </div>
+      </div>
+      <div class="item">
+        <div><b>位置</b><span>一键摆到屏幕的固定位置（也可以直接用鼠标拖）</span></div>
+        <div class="row gap8">
+          <button class="btn small" @click="placeLyric('top')">屏幕顶部</button>
+          <button class="btn small" @click="placeLyric('middle')">屏幕中间</button>
+          <button class="btn small" @click="placeLyric('bottom')">屏幕底部</button>
         </div>
       </div>
     </section>

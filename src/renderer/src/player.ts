@@ -3,9 +3,10 @@ import { markRaw, reactive, watch } from 'vue'
 import { api, formatTime, on, qualityName, type Song } from './api'
 import { settings } from './settings'
 import { toast } from './ui'
+import { buildLyric, type LyricLine } from './lyricFx'
 
 export interface QueueSource { type: string, name: string, route?: { name: string, params: Record<string, any> } }
-export interface LyricLine { time: number, text: string, trans?: string }
+export type { LyricLine }
 
 export const player = reactive({
   queue: [] as Song[],
@@ -48,36 +49,6 @@ const parseInterval = (interval: string | undefined) => {
 }
 
 // ---------------- 歌词 ----------------
-const timeRxp = /\[(\d{1,3}):(\d{1,2})(?:[.:](\d{1,3}))?\]/g
-const parseLrc = (text: string) => {
-  const out: Array<{ time: number, text: string }> = []
-  for (const line of String(text ?? '').split(/\r?\n/)) {
-    timeRxp.lastIndex = 0
-    const times: number[] = []
-    let m: RegExpExecArray | null
-    let last = 0
-    while ((m = timeRxp.exec(line))) {
-      const ms = m[3] ? parseInt(m[3].padEnd(3, '0')) / 1000 : 0
-      times.push(parseInt(m[1]) * 60 + parseInt(m[2]) + ms)
-      last = timeRxp.lastIndex
-    }
-    if (!times.length) continue
-    const content = line.slice(last).replace(/<-?\d+,-?\d+(?:,-?\d+)?>/g, '').trim()
-    for (const t of times) out.push({ time: Math.max(0, t), text: content })
-  }
-  return out.sort((a, b) => a.time - b.time)
-}
-
-const buildLyric = (data: { lyric: string, tlyric?: string }) => {
-  const lines = parseLrc(data.lyric).filter(l => l.text)
-  const trans = new Map<string, string>()
-  for (const l of parseLrc(data.tlyric ?? '')) if (l.text) trans.set(l.time.toFixed(1), l.text)
-  return lines.map(l => {
-    const t = trans.get(l.time.toFixed(1))
-    return t && t != l.text ? { ...l, trans: t } : l
-  })
-}
-
 const loadLyric = async(song: Song, tk: number) => {
   player.lyric = []
   player.lyricIndex = -1
@@ -110,14 +81,24 @@ const updateLyricIndex = () => {
   }
 }
 
+/** 精确的当前播放时间（player.time 一秒只更新几次，做逐字动效不够用） */
+export const getTime = () => audio.src && !audio.paused ? audio.currentTime : player.time
+
+let lastLyricPush = 0
 const pushDesktopLyric = () => {
   if (!player.lyricWindow) return
   const line = player.lyric[player.lyricIndex]
   const next = player.lyric[player.lyricIndex + 1]
   const title = player.song ? `${player.song.name} - ${player.song.singer}` : ''
+  lastLyricPush = Date.now()
   void api('lyric.push', {
     title,
-    playing: player.playing,
+    playing: player.playing && !audio.paused,
+    // 逐字动效用：桌面歌词窗口拿到当前播放位置后自己按时间往下走
+    pos: audio.src ? audio.currentTime : player.time,
+    index: player.lyricIndex,
+    line: line ? { start: line.time, dur: line.dur, words: line.words ?? null, text: line.text } : null,
+    nextLine: next ? { start: next.time, dur: next.dur, words: next.words ?? null, text: next.text } : null,
     text: line?.text ?? (player.song ? (player.lyricState == 'none' ? title : (player.lyric.length ? title : '')) : 'Veya Music'),
     trans: settings.showTranslation ? (line?.trans ?? '') : '',
     next: next?.text ?? '',
@@ -247,6 +228,8 @@ audio.addEventListener('timeupdate', () => {
   lastTick = t
   player.time = t
   updateLyricIndex()
+  // 定时给桌面歌词对一下表（拖动进度、卡顿之后不会跑偏）
+  if (player.lyricWindow && Date.now() - lastLyricPush > 1500) pushDesktopLyric()
 })
 audio.addEventListener('ended', () => {
   settleStats(false, true)
@@ -371,6 +354,7 @@ export const seek = (time: number) => {
     lastTick = time
   }
   updateLyricIndex()
+  pushDesktopLyric()
 }
 
 /** 用最近的几首歌作种子，追加相似歌曲 */
