@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref } from 'vue'
+import { computed, onActivated, onMounted, ref, watch } from 'vue'
 import { api, on, type Song } from '../api'
 import Cover from '../components/Cover.vue'
 import Icon from '../components/Icon.vue'
 import ListCard from '../components/ListCard.vue'
 import Page from '../components/Page.vue'
 import { player, playList, startPersonalRadio, toggle } from '../player'
-import { openSongMenu } from '../songMenu'
+import { dislikeVersion, openSongMenu } from '../songMenu'
 import { go } from '../ui'
 
 defineProps<{ params: Record<string, any> }>()
@@ -24,6 +24,7 @@ const BOARDS = [
   { id: 'kg__8888', name: '酷狗 TOP500' },
 ]
 const dailySource = { type: 'daily', name: '每日推荐', route: { name: 'daily', params: {} } }
+watch(dislikeVersion, () => void api('rec.daily').then(r => { daily.value = r }).catch(() => {}))
 
 const greeting = computed(() => {
   const h = new Date().getHours()

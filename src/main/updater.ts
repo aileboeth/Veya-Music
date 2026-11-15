@@ -4,7 +4,7 @@ import { app } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { autoUpdater } from 'electron-updater'
-import { load } from './store'
+import { load, save } from './store'
 
 export interface UpdateState {
   status: 'idle' | 'checking' | 'available' | 'downloading' | 'downloaded' | 'none' | 'error' | 'unsupported'
@@ -28,7 +28,12 @@ const set = (patch: Partial<UpdateState>) => {
 
 const notesText = (notes: any) => {
   const raw = Array.isArray(notes) ? notes.map(n => n?.note ?? '').join('\n') : String(notes ?? '')
-  return raw.replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').trim().slice(0, 2000)
+  // GitHub 返回的是 HTML：保留列表和换行，其余标签去掉
+  const html = /<\/?[a-z][^>]*>/i.test(raw)
+  return (html ? raw.replace(/\s*\n\s*/g, ' ') : raw).replace(/\r/g, '')
+    .replace(/<li[^>]*>/gi, '· ').replace(/<\/(li|p|h\d|ul|ol|div)>|<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .split('\n').map(l => l.trim()).filter(Boolean).join('\n').slice(0, 3000)
 }
 
 const friendlyError = (err: any) => {
@@ -69,7 +74,12 @@ export const initUpdater = (onState: (s: UpdateState) => void, onBeforeInstall: 
   autoUpdater.on('update-available', info => set({ status: 'available', version: info.version, notes: notesText(info.releaseNotes), percent: 0 }))
   autoUpdater.on('update-not-available', () => set({ status: 'none', message: '' }))
   autoUpdater.on('download-progress', p => set({ status: 'downloading', percent: Math.round(p.percent) }))
-  autoUpdater.on('update-downloaded', info => set({ status: 'downloaded', version: info.version, notes: notesText(info.releaseNotes), percent: 100 }))
+  autoUpdater.on('update-downloaded', info => {
+    const notes = notesText(info.releaseNotes)
+    // 存下来：装完重启后还能显示这次更新了什么
+    if (notes) save('updateNotes', { version: info.version, notes }, true)
+    set({ status: 'downloaded', version: info.version, notes, percent: 100 })
+  })
   autoUpdater.on('error', err => {
     // 自动检查失败时不打扰用户，只有手动检查才显示错误
     if (manual || state.status == 'downloading') set({ status: 'error', message: friendlyError(err) })
@@ -83,6 +93,12 @@ export const initUpdater = (onState: (s: UpdateState) => void, onBeforeInstall: 
 }
 
 export const getState = () => ({ ...state })
+
+/** 上次下载更新时保存的发布说明（仅当版本号对得上） */
+export const savedNotes = (version: string) => {
+  const saved = load<any>('updateNotes', null)
+  return saved?.version == version ? String(saved.notes ?? '') : ''
+}
 
 export const check = async(isManual = true) => {
   if (!enabled) return getState()

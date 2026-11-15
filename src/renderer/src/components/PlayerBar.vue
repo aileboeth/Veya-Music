@@ -4,6 +4,7 @@ import { formatTime, QUALITYS, qualityName } from '../api'
 import { isLoved, toggleLove } from '../lists'
 import { cycleMode, modeNames, next, player, prev, seek, setQuality, toggle, toggleDesktopLyric } from '../player'
 import { settings } from '../settings'
+import { dislike } from '../songMenu'
 import { go, openMenu } from '../ui'
 import Cover from './Cover.vue'
 import Icon from './Icon.vue'
@@ -59,6 +60,9 @@ const locate = () => {
         </div>
         <button class="icon-btn love" :class="{ loved: isLoved(player.song) }" :title="isLoved(player.song) ? '取消喜欢' : '喜欢'" @click="toggleLove(player.song)">
           <Icon :name="isLoved(player.song) ? 'heart-fill' : 'heart'" :size="19" />
+        </button>
+        <button v-if="player.song._rec || player.song._reason || player.radio || player.source?.type == 'daily'" class="icon-btn" title="不喜欢这首推荐，以后不再推荐并切到下一首" @click="dislike(player.song)">
+          <Icon name="ban" :size="17" />
         </button>
       </template>
       <div v-else class="idle dim">Veya Music · 听见你的喜欢</div>

@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import { dataDir, load, save } from './store'
+import { nodeProxy } from './net'
 
 export interface SourceMeta {
   id: string
@@ -210,7 +211,7 @@ const loadScript = (meta: SourceMeta): Runtime => {
         author: meta.author,
         homepage: meta.homepage,
         script,
-        proxy: { host: '', port: '' },
+        proxy: { host: nodeProxy()?.host ?? '', port: nodeProxy()?.port ?? '' },
       })
     }).catch(err => finish(false, String(err?.message ?? err)))
   })
@@ -257,6 +258,15 @@ export const initUserApi = () => {
 export const warmup = () => {
   const first = getList().find(m => m.enabled)
   if (first) loadScript(first)
+}
+
+/** 确保脚本已初始化；成功返回空字符串，失败返回原因 */
+export const ensure = async(id: string) => {
+  const meta = getList().find(m => m.id == id)
+  if (!meta) return '音源不存在'
+  const rt = loadScript(meta)
+  await rt.init
+  return rt.status == 'ready' ? '' : (rt.message || '初始化失败')
 }
 
 export const reload = async(id: string) => {

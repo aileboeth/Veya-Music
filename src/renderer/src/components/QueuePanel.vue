@@ -58,7 +58,7 @@ const gotoSource = () => {
           <div class="rows" :style="{ transform: `translateY(${range.start * ROW_H}px)` }">
             <div
               v-for="row in visible" :key="row.song.id" class="q-row" :class="{ current: row.index == player.index }"
-              @dblclick="playQueueIndex(row.index)" @contextmenu="openSongMenu($event, row.song, { play: () => playQueueIndex(row.index) })"
+              @dblclick="playQueueIndex(row.index)" @contextmenu="openSongMenu($event, row.song, { recommend: !!row.song._rec, play: () => playQueueIndex(row.index) })"
             >
               <span class="idx">
                 <span v-if="row.index == player.index" class="dot" />

@@ -6,6 +6,7 @@ import http from 'http'
 import https from 'https'
 import { getLyric, getMusicUrl } from './music'
 import { load, save } from './store'
+import { agentFor } from './net'
 
 export interface DownloadTask {
   id: string
@@ -58,6 +59,7 @@ const fetchToFile = (url: string, file: string, task: DownloadTask, redirects = 
   const req = (url.startsWith('https') ? https : http).get(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
     timeout: 30_000,
+    agent: agentFor(url),
   }, res => {
     if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects < 5) {
       res.resume()

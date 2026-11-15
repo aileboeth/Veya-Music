@@ -1,6 +1,6 @@
 // 播放器核心：播放队列、播放模式、歌词、听歌记录、相似歌曲续播
 import { markRaw, reactive, watch } from 'vue'
-import { api, on, qualityName, type Song } from './api'
+import { api, formatTime, on, qualityName, type Song } from './api'
 import { settings } from './settings'
 import { toast } from './ui'
 
@@ -22,7 +22,7 @@ export const player = reactive({
   lyric: [] as LyricLine[],
   lyricIndex: -1,
   lyricState: '' as '' | 'loading' | 'none',
-  info: null as null | { quality: string, scriptName: string, switched: boolean, song: Song },
+  info: null as null | { quality: string, scriptName: string, scriptId: string, switched: boolean, unverified?: boolean, song: Song },
   showNowPlaying: false,
   showQueue: false,
   lyricWindow: false,
@@ -36,6 +36,10 @@ let retried = false
 let started = false
 let listened = 0
 let lastTick = 0
+// 时长校验：音源给的音频和歌曲信息的时长差太多（给错歌 / 只有试听片段）时，自动换下一个音源
+let mismatchScripts: string[] = []
+let mismatchFallback: any = null
+let wantPlay = true
 const shuffleHistory: number[] = []
 
 const parseInterval = (interval: string | undefined) => {
@@ -131,8 +135,13 @@ const settleStats = (manualSkip: boolean, ended = false) => {
 }
 
 // ---------------- 加载与播放 ----------------
-const loadSong = async(song: Song, autoplay = true, startAt = 0, refresh = false) => {
+const loadSong = async(song: Song, autoplay = true, startAt = 0, refresh = false, recheck = false) => {
   const tk = ++token
+  wantPlay = autoplay
+  if (!recheck) {
+    mismatchScripts = []
+    mismatchFallback = null
+  }
   player.song = song
   player.loading = true
   player.info = null
@@ -159,7 +168,15 @@ const loadSong = async(song: Song, autoplay = true, startAt = 0, refresh = false
   updateMediaSession()
   syncState()
   try {
-    const info = await api('music.url', song, settings.quality, { refresh, allowSwitch: settings.autoSwitchSource })
+    let info: any
+    try {
+      info = await api('music.url', song, settings.quality, { refresh, allowSwitch: settings.autoSwitchSource, exclude: mismatchScripts })
+    } catch (err) {
+      // 换遍了也没有时长吻合的：可能是歌曲信息本身不准，退回第一个结果并提醒
+      if (tk != token || !mismatchFallback) throw err
+      info = { ...mismatchFallback, unverified: true }
+      toast(`没有找到与《${song.name}》时长吻合的音源，现在播放的内容可能不是这首歌`, 'error', 5000)
+    }
     if (tk != token) return
     player.info = info
     audio.src = info.url
@@ -208,6 +225,18 @@ audio.addEventListener('pause', () => {
 })
 audio.addEventListener('waiting', () => { if (player.playing) player.loading = true })
 audio.addEventListener('canplay', () => { player.loading = false })
+audio.addEventListener('loadedmetadata', () => {
+  const info: any = player.info
+  const song = player.song
+  if (!info || !song || info.unverified || !Number.isFinite(audio.duration)) return
+  const expected = parseInterval(info.song?.interval ?? song.interval)
+  if (expected < 30 || Math.abs(audio.duration - expected) <= Math.max(10, expected * 0.06)) return
+  void api('music.mismatch', info.song ?? song, info.scriptId).catch(() => {})
+  mismatchScripts.push(`${info.scriptId}|${(info.song ?? song).id}`)
+  mismatchFallback ??= info
+  toast(`「${info.scriptName}」给的音频时长对不上（${formatTime(audio.duration)} / 应为 ${formatTime(expected)}），正在换其他音源…`)
+  void loadSong(song, wantPlay, 0, true, true)
+})
 audio.addEventListener('durationchange', () => {
   if (Number.isFinite(audio.duration) && audio.duration > 0) player.duration = audio.duration
 })

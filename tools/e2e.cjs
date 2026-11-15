@@ -3,7 +3,7 @@
 const fs = require('fs')
 const path = require('path')
 
-module.exports = async({ app, api, importSourceFiles, getMainWin, getLyricWin }) => {
+module.exports = async({ app, api, userApi, music, store, importSourceFiles, getMainWin, getLyricWin }) => {
   const outDir = process.env.VEYA_E2E_OUT
   fs.mkdirSync(outDir, { recursive: true })
   const logFile = path.join(outDir, 'log.txt')
@@ -37,7 +37,7 @@ module.exports = async({ app, api, importSourceFiles, getMainWin, getLyricWin })
     await waitFor(`document.querySelector('.sidebar')`)
     await sleep(800)
     const steps = require(process.env.VEYA_E2E_STEPS)
-    await steps({ app, api, importSourceFiles, win, getLyricWin, js, shot, waitFor, click, clickText, sleep, log })
+    await steps({ app, api, userApi, music, store, importSourceFiles, win, getLyricWin, js, shot, waitFor, click, clickText, sleep, log })
     log('DONE')
   } catch (err) {
     log('FAILED', err.stack || String(err))

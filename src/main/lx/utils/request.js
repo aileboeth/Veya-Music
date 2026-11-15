@@ -23,6 +23,8 @@ const request = (url, options, callback) => {
     options.json = false
   }
   options.response_timeout = options.timeout
+  // 代理只听应用里的设置，不受 HTTP(S)_PROXY 环境变量影响
+  options.use_proxy_from_env_var = false
 
   return needle.request(options.method || 'get', url, data, options, (err, resp, body) => {
     if (!err) {

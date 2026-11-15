@@ -1,7 +1,7 @@
 {
   "name": "veya-music",
   "productName": "Veya Music",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Veya Music - 带智能推荐的多平台音乐播放器",
   "main": "./out/main/index.js",
   "author": "aileboeth",
@@ -16,7 +16,7 @@
     "build": "electron-vite build",
     "start": "electron-vite preview",
     "pack": "electron-vite build && electron-builder --win --dir --publish never",
-    "dist": "electron-vite build && electron-builder --win --publish never"
+    "dist": "electron-vite build && electron-builder --win --publish never && node tools/release-notes.cjs"
   },
   "build": {
     "appId": "com.aileboeth.veyamusic",

@@ -8,6 +8,7 @@ import * as rec from './recommend'
 import * as dl from './download'
 import { lxDbPath, readLxDatabase, readLxFile } from './lxImport'
 import * as updater from './updater'
+import { applyProxy, setProxyHandlers } from './net'
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL
 let mainWin: BrowserWindow | null = null
@@ -203,7 +204,11 @@ const importSourceFiles = (paths: string[]) => {
 
 const api: Record<string, (...args: any[]) => any> = {
   'data.load': (key: string, def: any) => DATA_KEYS.has(key) ? load(key, def) : def,
-  'data.save': (key: string, value: any) => { if (DATA_KEYS.has(key)) save(key, value) },
+  'data.save': (key: string, value: any) => {
+    if (!DATA_KEYS.has(key)) return
+    save(key, value)
+    if (key == 'settings') void applyProxy()
+  },
 
   'search.music': music.searchMusic,
   'search.tips': music.tipSearch,
@@ -218,8 +223,11 @@ const api: Record<string, (...args: any[]) => any> = {
   'music.lyric': music.getLyric,
   'music.pic': music.getPic,
   'music.others': music.findOtherSources,
+  'music.mismatch': music.reportMismatch,
 
-  'source.list': userApi.getStatusList,
+  'source.list': music.sourceList,
+  'source.speedTest': music.speedTest,
+  'source.speedState': music.getSpeedState,
   'source.pick': async() => {
     const r = await dialog.showOpenDialog(mainWin!, { title: '选择音源脚本', filters: [{ name: '音源脚本', extensions: ['js'] }], properties: ['openFile', 'multiSelections'] })
     return r.canceled ? { ok: [], failed: [] } : importSourceFiles(r.filePaths)
@@ -281,6 +289,7 @@ const api: Record<string, (...args: any[]) => any> = {
   'update.state': updater.getState,
   'update.check': () => updater.check(true),
   'update.install': updater.install,
+  'update.savedNotes': updater.savedNotes,
 
   'player.state': (state: { playing: boolean, title: string }) => {
     playState = state
@@ -340,7 +349,7 @@ const runDevScript = () => {
   if (app.isPackaged || !process.env.VEYA_DEV_SCRIPT) return
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require(process.env.VEYA_DEV_SCRIPT)({ app, api, importSourceFiles, getMainWin: () => mainWin, getLyricWin: () => lyricWin })
+    require(process.env.VEYA_DEV_SCRIPT)({ app, api, userApi, music, store: { load, save }, importSourceFiles, getMainWin: () => mainWin, getLyricWin: () => lyricWin })
   } catch (err) {
     console.error('[dev script]', err)
   }
@@ -352,10 +361,16 @@ if (!app.requestSingleInstanceLock()) {
   app.on('second-instance', showMain)
   app.setAppUserModelId('com.aileboeth.veyamusic')
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async() => {
     Menu.setApplicationMenu(null)
     userApi.initUserApi()
-    userApi.setOnChange(() => sendMain('sources:changed', userApi.getStatusList()))
+    await applyProxy()
+    setProxyHandlers(() => userApi.closeAll(), (text, type) => sendMain('app:toast', text, type))
+    userApi.setOnChange(() => sendMain('sources:changed', music.sourceList()))
+    music.setOnSpeedChange(() => {
+      sendMain('sources:changed', music.sourceList())
+      sendMain('sources:speed', music.getSpeedState())
+    })
     dl.initDownload(tasks => sendMain('downloads:changed', tasks))
     initIpc()
     createMainWindow()

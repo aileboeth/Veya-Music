@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { api, on, QUALITYS, SOURCES } from '../api'
 import Icon from '../components/Icon.vue'
 import Page from '../components/Page.vue'
@@ -7,7 +7,7 @@ import { importLists } from '../lists'
 import { player, toggleDesktopLyric } from '../player'
 import { settings } from '../settings'
 import { alertDialog, confirmDialog, toast } from '../ui'
-import { checkUpdate, installUpdate, update, updateText } from '../update'
+import { checkUpdate, installUpdate, showChangelog, update, updateText } from '../update'
 
 defineProps<{ params: Record<string, any> }>()
 
@@ -19,10 +19,12 @@ const lxExists = ref(false)
 onMounted(async() => {
   sources.value = await api('source.list')
   off = on('sources:changed', (list: any[]) => { sources.value = list })
+  Object.assign(speed, await api('source.speedState'))
+  offSpeed = on('sources:speed', (s: any) => { Object.assign(speed, s) })
   appInfo.value = await api('app.info')
   lxExists.value = await api('lx.exists')
 })
-onBeforeUnmount(() => off?.())
+onBeforeUnmount(() => { off?.(); offSpeed?.() })
 
 const importResult = (r: { ok: string[], failed: string[] }) => {
   if (r.ok.length) toast(`已导入 ${r.ok.length} 个音源`, 'success')
@@ -53,6 +55,54 @@ const test = async(s: any) => {
 }
 const statusText: Record<string, string> = { ready: '运行中', loading: '加载中…', failed: '初始化失败', idle: '待命（需要时自动启动）', disabled: '已停用' }
 const supportText = (s: any) => s.sources ? SOURCES.filter(x => s.sources[x.id]).map(x => x.name).join(' / ') : ''
+
+// ---------- 测速 ----------
+const speed = reactive({ running: false, done: 0, total: 0, t: 0 })
+let offSpeed: (() => void) | null = null
+const runSpeedTest = async() => {
+  if (speed.running) return
+  speed.running = true
+  try {
+    const list = await api<any[]>('source.speedTest')
+    const usable = list.filter(s => s.speed && Object.values<any>(s.speed).some(c => c.ok))
+    if (!usable.length) return void toast('测速完成：没有一个音源能拿到可播放的链接，请检查网络或更换音源', 'error', 5000)
+    const best = usable.map(s => ({ name: s.name, ms: avgMs(s) })).sort((a, b) => a.ms - b.ms)[0]
+    toast(`测速完成：${usable.length} 个音源可用，最快的是「${best.name}」（平均 ${(best.ms / 1000).toFixed(1)} 秒）`, 'success', 5000)
+  } catch (err: any) {
+    toast(`测速失败：${err.message}`, 'error')
+  } finally {
+    speed.running = false
+  }
+}
+const avgMs = (s: any) => {
+  const ok = Object.values<any>(s.speed ?? {}).filter(c => c.ok)
+  return ok.length ? ok.reduce((n, c) => n + c.ms, 0) / ok.length : Infinity
+}
+const speedCells = (s: any) => SOURCES.filter(x => s.speed?.[x.id]).map(x => {
+  const c = s.speed[x.id]
+  return {
+    id: x.id,
+    text: c.ok ? `${x.name} ${(c.ms / 1000).toFixed(1)}s` : `${x.name} 失败`,
+    cls: !c.ok ? 'bad' : c.ms > 3000 || c.kbps < 150 ? 'slow' : 'good',
+    title: c.ok ? `取链接 ${c.ms} 毫秒 · 下载速度约 ${c.kbps >= 1024 ? (c.kbps / 1024).toFixed(1) + ' MB/s' : c.kbps + ' KB/s'}` : c.err,
+  }
+})
+const speedTime = () => speed.t ? new Date(speed.t).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+
+// ---------- 网络 ----------
+const proxyHost = ref(settings.proxy.host)
+const proxyPort = ref(String(settings.proxy.port))
+const proxyDirty = () => proxyHost.value.trim() != settings.proxy.host || Number(proxyPort.value) != settings.proxy.port
+const applyProxyAddr = () => {
+  const port = Math.floor(Number(proxyPort.value))
+  const host = proxyHost.value.trim() || '127.0.0.1'
+  if (!(port > 0 && port < 65536)) return void toast('端口要填 1 到 65535 之间的数字', 'error')
+  if (!/^[\w.-]{1,100}$/.test(host)) return void toast('地址只能填 IP 或域名，例如 127.0.0.1', 'error')
+  settings.proxy.host = proxyHost.value = host
+  settings.proxy.port = port
+  proxyPort.value = String(port)
+  toast(`代理已设为 ${host}:${port}`, 'success')
+}
 
 // ---------- LX 迁移 ----------
 const importing = ref(false)
@@ -92,22 +142,34 @@ const setLyric = (patch: Record<string, any>) => void api('lyric.setConf', patch
 
     <section>
       <h2>音源管理</h2>
-      <p class="hint">Veya Music 兼容 LX Music 的自定义音源脚本（.js）。播放时按下面的顺序依次尝试；排在前面的失败了会自动换下一个，全部失败再自动换到其他平台的同一首歌。</p>
+      <p class="hint">Veya Music 兼容 LX Music 的自定义音源脚本（.js）。一个音源失败了会自动换下一个，全部失败再自动换到其他平台的同一首歌。点「测速」可以看每个音源在各平台取链接要多久。</p>
       <div class="row gap8" style="margin-bottom: 12px">
         <button class="btn primary" @click="pickFiles"><Icon name="plus" :size="16" />导入音源脚本</button>
         <button class="btn" @click="pickFolder"><Icon name="folder" :size="16" />导入整个文件夹</button>
+        <button class="btn" :disabled="speed.running || !sources.some(s => s.enabled)" @click="runSpeedTest">
+          <span v-if="speed.running" class="spinner mini" /><Icon v-else name="sparkle" :size="16" />{{ speed.running ? `测速中 ${speed.done}/${speed.total}` : '测速' }}
+        </button>
+        <span v-if="speedTime() && !speed.running" class="dim speed-time">上次测速：{{ speedTime() }}</span>
+      </div>
+      <div class="item">
+        <div><b>音源选择</b><span>{{ settings.sourceOrder == 'auto' ? '根据测速和平时播放的表现，每次优先用又快又稳的音源；没测过的按下面的顺序' : '严格按下面列表的顺序依次尝试' }}</span></div>
+        <div class="tabs">
+          <button :class="{ on: settings.sourceOrder == 'auto' }" @click="settings.sourceOrder = 'auto'">自动选最快</button>
+          <button :class="{ on: settings.sourceOrder == 'manual' }" @click="settings.sourceOrder = 'manual'">按列表顺序</button>
+        </div>
       </div>
       <div v-if="!sources.length" class="empty-box">还没有音源。点击上方按钮，选择你保存的音源脚本文件。</div>
       <div v-for="(s, i) in sources" :key="s.id" class="source" :class="s.status">
         <span class="order">{{ i + 1 }}</span>
         <div class="s-info">
-          <div class="s-name ellipsis">{{ s.name }} <small v-if="s.version" class="dim">{{ s.version }}</small><span v-if="i == 0 && s.enabled" class="badge q-320k">首选</span></div>
+          <div class="s-name ellipsis">{{ s.name }} <small v-if="s.version" class="dim">{{ s.version }}</small><span v-if="i == 0 && s.enabled && settings.sourceOrder == 'manual'" class="badge q-320k">首选</span></div>
           <div class="s-sub ellipsis">
             <span class="st"><i />{{ statusText[s.status] ?? s.status }}</span>
             <span v-if="s.status == 'failed' && s.message" class="err" :title="s.message">{{ s.message }}</span>
             <span v-else-if="supportText(s)">支持：{{ supportText(s) }}</span>
             <span v-if="s.author">作者：{{ s.author }}</span>
           </div>
+          <div v-if="speedCells(s).length" class="s-speed"><span v-for="c in speedCells(s)" :key="c.id" :class="c.cls" :title="c.title">{{ c.text }}</span></div>
           <div v-if="s.updateAlert" class="s-update ellipsis" :title="s.updateAlert.log">脚本提示有更新：{{ s.updateAlert.log }}</div>
         </div>
         <button class="icon-btn" title="上移（优先使用）" :disabled="i == 0" @click="move(i, -1)"><Icon name="up" :size="16" /></button>
@@ -136,6 +198,34 @@ const setLyric = (patch: Record<string, any>) => void api('lyric.setConf', patch
         <div><b>显示歌词翻译</b><span>外语歌曲在原文下方显示中文翻译</span></div>
         <button class="switch" :class="{ on: settings.showTranslation }" @click="settings.showTranslation = !settings.showTranslation" />
       </div>
+    </section>
+
+    <section>
+      <h2>网络</h2>
+      <p class="hint">歌曲文件来自国内平台，直连就很快；但有些音源脚本自己的服务器直连不稳定，走代理反而更容易拿到链接。拿不准就在两种方式下各点一次上面的「测速」，哪种失败少就用哪种。</p>
+      <div class="item">
+        <div><b>代理</b><span>{{ { system: '和浏览器一样：Windows 开了系统代理就走代理，没开就直连', direct: '所有网络请求都不走代理', custom: '使用下面填写的代理地址和端口' }[settings.proxy.mode] }}</span></div>
+        <div class="tabs">
+          <button :class="{ on: settings.proxy.mode == 'system' }" @click="settings.proxy.mode = 'system'">跟随系统</button>
+          <button :class="{ on: settings.proxy.mode == 'direct' }" @click="settings.proxy.mode = 'direct'">全部直连</button>
+          <button :class="{ on: settings.proxy.mode == 'custom' }" @click="settings.proxy.mode = 'custom'">固定端口</button>
+        </div>
+      </div>
+      <template v-if="settings.proxy.mode == 'custom'">
+        <div class="item">
+          <div><b>代理地址和端口</b><span>HTTP 代理，例如 Clash / v2rayN 的 127.0.0.1:7890</span></div>
+          <div class="row gap8">
+            <input v-model="proxyHost" class="input addr" placeholder="127.0.0.1" spellcheck="false" maxlength="100" @keydown.enter="applyProxyAddr" />
+            <span class="dim">:</span>
+            <input v-model="proxyPort" class="input port" placeholder="7890" spellcheck="false" maxlength="5" @keydown.enter="applyProxyAddr" />
+            <button class="btn small" :class="{ primary: proxyDirty() }" :disabled="!proxyDirty()" @click="applyProxyAddr">应用</button>
+          </div>
+        </div>
+        <div class="item">
+          <div><b>只有检查更新走代理</b><span>{{ settings.proxy.scope == 'update' ? '听歌、搜索、下载都直连' : '现在所有网络请求都走这个端口（代理软件用规则模式时，国内的歌曲文件仍然是直连速度）' }}</span></div>
+          <button class="switch" :class="{ on: settings.proxy.scope == 'update' }" @click="settings.proxy.scope = settings.proxy.scope == 'update' ? 'all' : 'update'" />
+        </div>
+      </template>
     </section>
 
     <section>
@@ -227,8 +317,10 @@ const setLyric = (patch: Record<string, any>) => void api('lyric.setConf', patch
         <div class="row gap8">
           <button v-if="update.status == 'downloaded'" class="btn small primary" @click="installUpdate">重启更新</button>
           <button v-else class="btn small" :disabled="['checking', 'available', 'downloading', 'unsupported'].includes(update.status)" @click="checkUpdate">检查更新</button>
+          <button class="btn small" @click="showChangelog">更新日志</button>
         </div>
       </div>
+      <div v-if="update.notes && ['available', 'downloading', 'downloaded'].includes(update.status)" class="notes"><b>{{ update.version }} 更新内容</b>{{ update.notes }}</div>
       <div class="item">
         <div><b>自动检查更新</b><span>启动时和每隔几小时检查一次，有新版本自动在后台下载</span></div>
         <button class="switch" :class="{ on: settings.autoUpdate }" @click="settings.autoUpdate = !settings.autoUpdate" />
@@ -270,4 +362,15 @@ h2 { font-size: 17px; margin: 0 0 12px; }
 .err { color: var(--danger); overflow: hidden; text-overflow: ellipsis; }
 .s-update { font-size: 12px; color: #c77d00; margin-top: 3px; }
 .about a { text-decoration: underline; }
+.speed-time { font-size: 12px; margin-left: 4px; }
+.spinner.mini { width: 14px; height: 14px; border-width: 2px; }
+.s-speed { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.s-speed span { height: 20px; padding: 0 7px; border-radius: 6px; font-size: 11px; line-height: 20px; font-variant-numeric: tabular-nums; }
+.s-speed .good { color: #0f9d74; background: rgba(18, 184, 134, 0.13); }
+.s-speed .slow { color: #c77d00; background: rgba(245, 179, 1, 0.16); }
+.s-speed .bad { color: var(--danger); background: rgba(229, 72, 77, 0.11); }
+.input.addr { width: 150px; height: 30px; }
+.input.port { width: 72px; height: 30px; }
+.notes { padding: 12px 16px; border-radius: 12px; background: var(--card); border: 1px solid var(--border); margin-bottom: 8px; font-size: 13px; line-height: 1.8; color: var(--text2); white-space: pre-wrap; user-select: text; max-height: 240px; overflow-y: auto; }
+.notes b { display: block; color: var(--text); margin-bottom: 2px; }
 </style>

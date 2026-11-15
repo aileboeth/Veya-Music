@@ -4,7 +4,7 @@ import { computed, inject, nextTick, onActivated, onBeforeUnmount, onMounted, re
 import { bestQuality, qualityLabel, sourceName, type Song } from '../api'
 import { isLoved, toggleLove } from '../lists'
 import { addNext, player, playList, toggle, type QueueSource } from '../player'
-import { openSongMenu } from '../songMenu'
+import { dislike, openSongMenu } from '../songMenu'
 import Cover from './Cover.vue'
 import Icon from './Icon.vue'
 
@@ -163,6 +163,7 @@ const onMenu = (e: MouseEvent, song: Song, index: number) => {
               <button class="icon-btn" :class="{ loved: isLoved(row.song) }" :title="isLoved(row.song) ? '取消喜欢' : '喜欢'" @click.stop="toggleLove(row.song)">
                 <Icon :name="isLoved(row.song) ? 'heart-fill' : 'heart'" :size="16" />
               </button>
+              <button v-if="recommend" class="icon-btn" title="不喜欢，以后不再推荐" @click.stop="dislike(row.song).then(() => emit('removed'))"><Icon name="ban" :size="16" /></button>
               <button class="icon-btn" title="下一首播放" @click.stop="addNext([row.song])"><Icon name="playnext" :size="16" /></button>
               <button class="icon-btn" title="更多" @click.stop="onMenu($event, row.song, row.index)"><Icon name="more" :size="16" /></button>
             </div>

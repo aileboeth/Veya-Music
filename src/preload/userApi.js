@@ -133,7 +133,7 @@ const initEnv = userApi => {
   contextBridge.exposeInMainWorld('lx', {
     EVENT_NAMES,
     request(url, { method = 'get', timeout, headers, body, form, formData }, callback) {
-      const options = { headers, agent: getRequestAgent(url) }
+      const options = { headers, agent: getRequestAgent(url), use_proxy_from_env_var: false }
       let data
       if (body) {
         data = body

@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { api, type Song } from '../api'
 import Icon from '../components/Icon.vue'
 import Page from '../components/Page.vue'
 import SongList from '../components/SongList.vue'
 import { createList } from '../lists'
 import { playList } from '../player'
+import { dislikeVersion } from '../songMenu'
 import { toast } from '../ui'
 
 defineProps<{ params: Record<string, any> }>()
@@ -34,6 +35,7 @@ const load = async(force = false) => {
 onMounted(() => load())
 /** 标记不喜欢后主进程会从缓存里移除，这里重新读取 */
 const reload = () => void api('rec.daily').then(r => { songs.value = r.songs })
+watch(dislikeVersion, reload)
 
 const saveAs = () => {
   createList(`每日推荐 ${today.getMonth() + 1}.${today.getDate()}`, songs.value)
@@ -49,7 +51,7 @@ const saveAs = () => {
         <div class="hero-tag">为你推荐 · 每天凌晨 4 点更新</div>
         <h1>每日推荐</h1>
         <div class="hero-desc">
-          {{ cold ? '听歌记录还不够多，先为你准备了一些近期热门。多听、多点 ♡，推荐会越来越准。' : '根据你常听、收藏的歌曲计算出的相似好歌；对不喜欢的歌右键选「不喜欢」，以后就不会再出现。' }}
+          {{ cold ? '听歌记录还不够多，先为你准备了一些近期热门。多听、多点 ♡，推荐会越来越准。' : '根据你常听、收藏的歌曲计算出的相似好歌；遇到不喜欢的歌，点这一行右侧的 ⊘（或播放栏上的同一个按钮），以后就不再推荐，相似的歌也会少推。' }}
         </div>
         <div class="hero-btns">
           <button class="btn primary" :disabled="!songs.length" @click="playList(songs, 0, queueSource)"><Icon name="play" :size="16" />播放全部</button>

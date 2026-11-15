@@ -1,7 +1,8 @@
 // 歌曲右键菜单 + 通用歌曲操作
+import { ref } from 'vue'
 import { api, type Song } from './api'
 import { isLoved, removeSongs, toggleLove } from './lists'
-import { addNext, enqueue, playSong, startRadio } from './player'
+import { addNext, enqueue, player, playSong, removeFromQueue, startRadio } from './player'
 import { settings } from './settings'
 import { go, openMenu, pickListFor, toast, type MenuItem } from './ui'
 
@@ -11,9 +12,15 @@ export const download = async(songs: Song[]) => {
   toast(`已加入下载：${songs.length} 首`, 'success')
 }
 
+/** 每次标记「不喜欢」后加一，推荐类页面据此刷新列表 */
+export const dislikeVersion = ref(0)
+
 export const dislike = async(song: Song, singer = false) => {
   await api('rec.dislike', song, singer)
-  toast(singer ? `以后不再推荐 ${song.singer.split(/、|&/)[0]} 的歌` : '以后不再推荐这首歌')
+  dislikeVersion.value++
+  toast(singer ? `以后不再推荐 ${song.singer.split(/、|&/)[0]} 的歌` : `以后不再推荐《${song.name}》，相似的歌也会少推`)
+  // 正在放的就是这首：从队列里拿掉并切到下一首
+  if (!singer && player.song?.id == song.id) removeFromQueue(player.index)
 }
 
 export interface SongMenuOptions {

@@ -8,6 +8,11 @@ export const settings = reactive({
   playMode: 'order' as 'order' | 'loop' | 'shuffle' | 'single',
   autoContinue: true,
   autoSwitchSource: true,
+  /** auto = 按测速和历史表现优先用快的音源；manual = 按音源列表的顺序 */
+  sourceOrder: 'auto' as 'auto' | 'manual',
+  proxy: { mode: 'system', host: '127.0.0.1', port: 7890, scope: 'update' } as { mode: 'system' | 'direct' | 'custom', host: string, port: number, scope: 'update' | 'all' },
+  /** 上次运行的版本号，用来在升级后显示更新内容 */
+  lastVersion: '',
   volume: 0.8,
   closeToTray: true,
   autoUpdate: true,
@@ -30,6 +35,8 @@ let loaded = false
 export const initSettings = async() => {
   const saved = await api<any>('data.load', 'settings', {})
   Object.assign(settings, saved ?? {})
+  // 0.1.1 及更早的版本没有记录版本号：有旧设置但没有 lastVersion，说明是从旧版升级上来的
+  if (!settings.lastVersion && saved && Object.keys(saved).length) settings.lastVersion = '0.1.1'
   applyTheme()
   media.addEventListener('change', applyTheme)
   loaded = true

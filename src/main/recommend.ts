@@ -6,6 +6,7 @@
 // 4. 打散：同一歌手最多 2 首，保证多样性
 import needle from 'needle'
 import { load, save } from './store'
+import { agentFor } from './net'
 import { boardDetail, normSongs, rawSdk, searchMusic, searchSongLists, songLists } from './music'
 
 const DAY = 86400_000
@@ -14,7 +15,9 @@ export interface SongStat { s: any, plays: number, done: number, skips: number, 
 interface Stats { songs: Record<string, SongStat>, recent: Array<{ id: string, t: number }> }
 
 export const getStats = () => load<Stats>('stats', { songs: {}, recent: [] })
-const getDislikes = () => load<{ songs: Record<string, 1>, singers: string[] }>('dislikes', { songs: {}, singers: [] })
+// songs 的值：旧版本是 1；现在存歌曲的精简信息，用来按歌名匹配其他平台的同一首歌、以及找「相似的也少推」
+const getDislikes = () => load<{ songs: Record<string, any>, singers: string[] }>('dislikes', { songs: {}, singers: [] })
+const dislikedInfos = () => Object.values(getDislikes().songs).filter(v => v && typeof v == 'object' && v.name) as any[]
 
 const singersOf = (singer: string) => String(singer ?? '').split(/、|&|;|；|\/|,|，|\|/).map(s => s.trim()).filter(Boolean)
 const mainSinger = (song: any) => singersOf(song.singer)[0] ?? ''
@@ -81,9 +84,26 @@ export const buildProfile = () => {
     if (cur) cur.w += 2
     else weights.set(song.id, { song, w: 2 })
   }
+  // 自建/导入的歌单也代表口味，权重比「我喜欢」低一些
+  for (const l of load<any[]>('lists', [])) {
+    if (l.id == 'love') continue
+    for (const song of l.songs ?? []) {
+      const cur = weights.get(song.id)
+      if (cur) cur.w += 0.8
+      else weights.set(song.id, { song, w: 0.8 })
+    }
+  }
+  const disliked = dislikedInfos()
+  const dislikedIds = getDislikes().songs
+  for (const id of Object.keys(dislikedIds)) weights.delete(id)
   const artists = new Map<string, number>()
   for (const { song, w } of weights.values()) {
     for (const name of singersOf(song.singer)) artists.set(name, (artists.get(name) ?? 0) + w)
+  }
+  // 点过「不喜欢」的歌：它的歌手整体扣分
+  for (const s of disliked) {
+    const name = mainSinger(s)
+    if (name) artists.set(name, (artists.get(name) ?? 0) - 1.5)
   }
   const seeds = [...weights.values()].sort((a, b) => b.w - a.w)
   const topArtists = [...artists.entries()].sort((a, b) => b[1] - a[1])
@@ -95,6 +115,8 @@ const postJson = (url: string, body: any) => new Promise<any>((resolve, reject) 
   needle.request('post', url, body, {
     json: true,
     response_timeout: 12_000,
+    agent: agentFor(url),
+    use_proxy_from_env_var: false,
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36', Referer: 'https://y.qq.com/' },
   }, (err, resp) => {
     if (err) return reject(err)
@@ -185,6 +207,7 @@ const hotFallback = async(count: number, exclude: Set<string>, excludeNames: Set
   const lists = await Promise.all(boards.map(id => boardDetail(id).then(r => r.list).catch(() => [])))
   const out: any[] = []
   const dislikes = getDislikes()
+  for (const s of dislikedInfos()) excludeNames.add(nameKey(s))
   for (let i = 0; i < 100 && out.length < count; i++) {
     for (const list of lists) {
       const s = list[i + Math.floor(Math.random() * 3)]
@@ -198,7 +221,21 @@ const hotFallback = async(count: number, exclude: Set<string>, excludeNames: Set
   return out
 }
 
-interface RankOptions { count: number, perArtist: number, excludeIds?: Set<string>, allowKnown?: boolean }
+interface RankOptions { count: number, perArtist: number, excludeIds?: Set<string>, allowKnown?: boolean, negative?: Map<string, number> }
+
+/** 和「不喜欢」的歌相似的歌：歌名键 -> 扣分。只看最近点的几首，结果有缓存 */
+const negativeScores = async() => {
+  const recent = dislikedInfos().sort((a, b) => (b.t ?? 0) - (a.t ?? 0)).slice(0, 6)
+  const out = new Map<string, number>()
+  const lists = await mapLimit(recent, 3, s => similarSongs(s).catch(() => []))
+  for (const list of lists) {
+    list.forEach((song, rank) => {
+      const key = nameKey(song)
+      out.set(key, (out.get(key) ?? 0) + 0.6 / (1 + rank / 8))
+    })
+  }
+  return out
+}
 const rankCandidates = (groups: Array<{ seed: any, w: number, list: any[] }>, opts: RankOptions) => {
   const stats = getStats()
   const dislikes = getDislikes()
@@ -210,6 +247,7 @@ const rankCandidates = (groups: Array<{ seed: any, w: number, list: any[] }>, op
     for (const st of Object.values(stats.songs)) if (st.plays >= 3 || st.skips >= 2) knownNames.add(nameKey(st.s))
     for (const l of load<any[]>('lists', [])) for (const s of l.songs ?? []) knownNames.add(nameKey(s))
   }
+  const dislikedNames = new Set(dislikedInfos().map(nameKey))
   const seedNames = new Set(groups.map(g => nameKey(g.seed)))
   const maxW = Math.max(1e-6, ...groups.map(g => g.w))
 
@@ -218,7 +256,7 @@ const rankCandidates = (groups: Array<{ seed: any, w: number, list: any[] }>, op
     g.list.forEach((song, rank) => {
       const key = nameKey(song)
       if (seedNames.has(key) || knownNames.has(key) || library.has(song.id) || opts.excludeIds?.has(song.id)) return
-      if (dislikes.songs[song.id] || singersOf(song.singer).some(n => dislikes.singers.includes(n))) return
+      if (dislikes.songs[song.id] || dislikedNames.has(key) || singersOf(song.singer).some(n => dislikes.singers.includes(n))) return
       const part = (g.w / maxW) / (1 + rank / 8)
       const cur = cands.get(key)
       if (cur) {
@@ -228,8 +266,12 @@ const rankCandidates = (groups: Array<{ seed: any, w: number, list: any[] }>, op
     })
   }
   for (const c of cands.values()) {
-    const aff = Math.max(0, ...singersOf(c.song.singer).map(n => artists.get(n) ?? 0)) / maxArtist
+    const affs = singersOf(c.song.singer).map(n => artists.get(n) ?? 0)
+    const aff = Math.max(0, ...affs) / maxArtist
     c.score += 0.2 * aff + Math.random() * 0.08
+    c.score -= opts.negative?.get(nameKey(c.song)) ?? 0
+    // 这个歌手被点过不喜欢、又没有别的正面记录：明显降权
+    if (affs.length && Math.max(...affs) < 0) c.score *= 0.4
   }
   const sorted = [...cands.values()].sort((a, b) => b.score - a.score)
   const perArtist = new Map<string, number>()
@@ -258,13 +300,16 @@ export const daily = async(force = false) => {
   dailyPending ??= (async() => {
     const { seeds } = buildProfile()
     const picked = weightedSample(seeds.slice(0, 50), 12)
-    const groups = await mapLimit(picked, 4, async p => ({ seed: p.song, w: p.w, list: await similarSongs(p.song) }))
-    const ranked = rankCandidates(groups, { count: 30, perArtist: 2 })
-    const songs = ranked.map(r => ({ ...r.song, _reason: `因为你听过《${r.reason.name}》` }))
+    const [groups, negative] = await Promise.all([
+      mapLimit(picked, 4, async p => ({ seed: p.song, w: p.w, list: await similarSongs(p.song) })),
+      negativeScores(),
+    ])
+    const ranked = rankCandidates(groups, { count: 30, perArtist: 2, negative })
+    const songs = ranked.map(r => ({ ...r.song, _rec: 1, _reason: `因为你听过《${r.reason.name}》` }))
     const cold = songs.length < 12
     if (songs.length < 30) {
       const fill = await hotFallback(30 - songs.length, new Set(songs.map(s => s.id)), new Set(songs.map(nameKey)))
-      songs.push(...fill.map(s => ({ ...s, _reason: '近期热门' })))
+      songs.push(...fill.map(s => ({ ...s, _rec: 1, _reason: '近期热门' })))
     }
     const result = { date: todayKey(), songs, cold, seedCount: picked.length }
     if (songs.length) save('daily', result)
@@ -280,8 +325,9 @@ export const radio = async(seedSongs: any[], excludeIds: string[], count = 15) =
   const groups = await mapLimit(seeds, 3, async(seed, ) => ({ seed, w: 1, list: await similarSongs(seed) }))
   groups.forEach((g, i) => { g.w = 0.6 + 0.2 * i }) // 越新的种子权重越高
   const exclude = new Set(excludeIds)
-  let ranked = rankCandidates(groups, { count, perArtist: 2, excludeIds: exclude, allowKnown: true })
-  if (ranked.length < Math.min(5, count)) ranked = rankCandidates(groups, { count, perArtist: 5, excludeIds: exclude, allowKnown: true })
+  const negative = await negativeScores()
+  let ranked = rankCandidates(groups, { count, perArtist: 2, excludeIds: exclude, allowKnown: true, negative })
+  if (ranked.length < Math.min(5, count)) ranked = rankCandidates(groups, { count, perArtist: 5, excludeIds: exclude, allowKnown: true, negative })
   let songs = ranked.map(r => r.song)
   if (songs.length < 5) {
     const names = new Set(seeds.map(nameKey))
@@ -292,7 +338,7 @@ export const radio = async(seedSongs: any[], excludeIds: string[], count = 15) =
     const j = Math.max(0, i - Math.floor(Math.random() * 3))
     ;[songs[i], songs[j]] = [songs[j], songs[i]]
   }
-  return songs
+  return songs.map(s => ({ ...s, _rec: 1 }))
 }
 
 // ---------- 发现页 ----------
@@ -328,11 +374,19 @@ export const dislike = (song: any, singer = false) => {
   if (singer) {
     const name = mainSinger(song)
     if (name && !d.singers.includes(name)) d.singers.push(name)
-  } else d.songs[song.id] = 1
+  } else {
+    d.songs[song.id] = { id: song.id, name: song.name, singer: song.singer, source: song.source, songmid: song.songmid, songId: song.songId, t: Date.now() }
+    // 同时记一次「跳过」，它不会再被当作口味种子
+    const stats = getStats()
+    if (stats.songs[song.id]) {
+      stats.songs[song.id].skips += 2
+      save('stats', stats)
+    }
+  }
   save('dislikes', d)
   const cache = load<any>('daily', null)
   if (cache?.songs) {
-    cache.songs = cache.songs.filter((s: any) => singer ? mainSinger(s) != mainSinger(song) : s.id != song.id)
+    cache.songs = cache.songs.filter((s: any) => singer ? mainSinger(s) != mainSinger(song) : (s.id != song.id && nameKey(s) != nameKey(song)))
     save('daily', cache)
   }
 }
