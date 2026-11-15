@@ -5,11 +5,11 @@ import Cover from '../components/Cover.vue'
 import Icon from '../components/Icon.vue'
 import Page from '../components/Page.vue'
 import SongList from '../components/SongList.vue'
-import { addSongs, countRemoved, getList, removeList } from '../lists'
+import { countRemoved, getList, removeList } from '../lists'
 import { enqueue, playList } from '../player'
 import { settings } from '../settings'
 import { download } from '../songMenu'
-import { confirmDialog, go, openMenu, promptDialog, toast } from '../ui'
+import { confirmDialog, go, openMenu, openSyncPreview, promptDialog, toast } from '../ui'
 
 const props = defineProps<{ params: Record<string, any> }>()
 
@@ -26,15 +26,20 @@ const play = (shuffle = false) => {
 }
 
 /** 收藏自在线歌单的列表：把原歌单里新增的歌同步过来 */
-const sync = async() => {
+const sync = async(force = false) => {
   const l = list.value
   if (!l?.source || !l.sourceListId || syncing.value) return
   syncing.value = true
   try {
     const r = await api('songlist.detail', l.source, l.sourceListId)
-    const n = addSongs(l.id, r.list, false, true)
+    const have = new Set(l.songs.map(s => s.id))
+    const removed = new Set(l.removed ?? [])
+    const fresh = (r.list as any[]).filter(s => !have.has(s.id))
     const skipped = countRemoved(l.id, r.list)
-    toast((n ? `同步完成，新增 ${n} 首` : '已经是最新的了') + (skipped ? `（你删掉的 ${skipped} 首没有加回来）` : ''), 'success', 4000)
+    // 真正新增的歌一首都没有：不用弹预览（删掉的那些不会自己回来，想要回来可以在「…」菜单里点「找回删掉的歌」）
+    if (!fresh.length) toast('已经是最新的了', 'success')
+    else if (!force && !fresh.some(s => !removed.has(s.id))) toast('已经是最新的了' + (skipped ? `（你删掉的 ${skipped} 首没有加回来）` : ''), 'success', 4000)
+    else openSyncPreview({ songs: r.list, missing: [], total: r.list.length, name: l.name, platformName: sourceName(l.source), source: l.source, sourceListId: l.sourceListId }, l.id)
   } catch (err: any) {
     toast('同步失败：' + err.message, 'error')
   } finally {
@@ -54,7 +59,7 @@ const more = (e: MouseEvent) => {
       const name = await promptDialog('重命名歌单', l.name)
       if (name) l.name = name.slice(0, 60)
     } },
-    ...(l.removed?.length ? [{ label: `恢复删掉的 ${l.removed.length} 首（下次同步时加回来）`, icon: 'refresh', action: () => { l.removed = []; toast('已恢复，点「同步更新」就会把它们加回来', 'success', 4000) } }] : []),
+    ...(l.removed?.length && l.sourceListId ? [{ label: `找回删掉的歌（${l.removed.length} 首）…`, icon: 'refresh', action: () => void sync(true) }] : []),
     { label: '清空歌单', icon: 'trash', danger: true, disabled: !songs.value.length, action: async() => {
       if (await confirmDialog(`清空「${l.name}」？`, `将移除全部 ${songs.value.length} 首歌，此操作不能撤销。`, { okText: '清空', danger: true })) l.songs = []
     } },
@@ -79,7 +84,7 @@ const more = (e: MouseEvent) => {
         <div class="hero-btns">
           <button class="btn primary" :disabled="!songs.length" @click="play()"><Icon name="play" :size="16" />播放全部</button>
           <button class="btn" :disabled="!songs.length" @click="play(true)"><Icon name="shuffle" :size="16" />随机播放</button>
-          <button v-if="list.sourceListId" class="btn" :disabled="syncing" title="把原歌单里新增的歌曲同步过来" @click="sync"><Icon name="refresh" :size="16" />{{ syncing ? '同步中…' : '同步更新' }}</button>
+          <button v-if="list.sourceListId" class="btn" :disabled="syncing" title="把原歌单里新增的歌曲同步过来" @click="sync()"><Icon name="refresh" :size="16" />{{ syncing ? '同步中…' : '同步更新' }}</button>
           <button class="btn" title="更多" @click="more"><Icon name="more" :size="16" /></button>
         </div>
       </div>

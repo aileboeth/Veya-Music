@@ -27,6 +27,25 @@ module.exports = async({ api, importSourceFiles, js, shot, waitFor, clickText, s
   log('now-playing b', await state())
   await shot('80-now-lyric')
 
+  // 律动：频谱要读得到真实数据（跨域音频没处理好的话全是 0），而且声音还在走
+  const t1 = await js(`return document.querySelector('.progress .time').textContent`)
+  const sums = []
+  for (let i = 0; i < 6; i++) { sums.push(await js(`return window.__veyaSpectrum()`)); await sleep(400) }
+  log('spectrum sums', sums, 'time', t1, '->', await js(`return document.querySelector('.progress .time').textContent`))
+  for (const [layoutClicks, visualClicks, name] of [[0, 1, '85-side-wave'], [0, 1, '86-side-bars'], [1, 2, '87-center-ring'], [0, 1, '88-center-wave']]) {
+    for (let i = 0; i < layoutClicks; i++) await js(`document.querySelectorAll('.now header .pill')[0].click()`)
+    for (let i = 0; i < visualClicks; i++) await js(`document.querySelectorAll('.now header .pill')[1].click()`)
+    await sleep(2600)
+    log(name, await js(`return [...document.querySelectorAll('.now header .pill')].map(b => b.textContent).join(' / ') + ' | canvas ' + document.querySelectorAll('.now canvas').length + ' | line.on ' + !!document.querySelector('.now .line.on')`))
+    await shot(name)
+  }
+  // 播放模式菜单
+  await js(`document.querySelector('.player-bar .mode').click()`)
+  await sleep(400)
+  log('mode menu', await js(`return [...document.querySelectorAll('.menu .item, .ctx-menu button, .menu button')].map(b => b.textContent.trim())`))
+  await shot('89-mode-menu')
+  await js(`document.body.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); document.body.click()`)
+
   // 桌面歌词
   api['lyric.toggle'](true)
   await sleep(3000)
@@ -48,6 +67,7 @@ module.exports = async({ api, importSourceFiles, js, shot, waitFor, clickText, s
     else if (s.units > 3 && s.filled >= 1) break
     await sleep(500)
   }
+  log('bounds single', lw.getBounds())
   log('desktop single a', await lstate())
   await sleep(600)
   log('desktop single b', await lstate())
@@ -55,7 +75,7 @@ module.exports = async({ api, importSourceFiles, js, shot, waitFor, clickText, s
 
   await api['lyric.setConf']({ mode: 'double' })
   await sleep(1200)
-  log('desktop double', await lstate())
+  log('desktop double', await lstate(), 'bounds', lw.getBounds())
   await lshot('82-desktop-double')
 
   await api['lyric.setConf']({ mode: 'single', effect: 'bounce', align: 'left', color: 'gold' })

@@ -190,7 +190,8 @@ button { font: inherit; border: 0; background: none; color: inherit; cursor: poi
 </style>
 
 <style scoped>
-.lyric-win { position: relative; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; border-radius: 16px; transition: background .2s; cursor: move; padding: 0 20px; }
+/* 窗口高度由主进程按字号算好：上面 36px 留给控制条，下面刚好放歌词 */
+.lyric-win { position: relative; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; border-radius: 14px; transition: background .2s; cursor: move; padding: 36px 14px 0; }
 .lyric-win.hover { background: rgba(18, 20, 32, 0.5); }
 .lyric-win.locked { cursor: default; }
 .lines { width: 100%; text-align: center; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 1px rgba(0, 0, 0, 0.5)); transition: opacity .3s; }
@@ -226,11 +227,11 @@ button { font: inherit; border: 0; background: none; color: inherit; cursor: poi
 .dots i { width: 0.42em; height: 0.42em; border-radius: 50%; background: #fff; transition: opacity .25s, transform .25s; }
 @keyframes breathe { 0%, 100% { transform: scale(0.92); } 50% { transform: scale(1.08); } }
 
-.bar { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 3px 8px; border-radius: 16px; background: rgba(0, 0, 0, 0.45); color: #fff; cursor: default; z-index: 2; white-space: nowrap; }
+.bar { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 2px; padding: 3px 8px; border-radius: 16px; background: rgba(0, 0, 0, 0.45); color: #fff; cursor: default; z-index: 2; white-space: nowrap; }
 .bar button { min-width: 28px; height: 26px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; opacity: .85; }
 .bar button.txt { padding: 0 7px; }
 .bar button:hover { background: rgba(255, 255, 255, 0.18); opacity: 1; }
 .bar i { width: 1px; height: 14px; background: rgba(255, 255, 255, 0.25); margin: 0 4px; }
-.unlock { position: absolute; top: 6px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 5px; height: 28px; padding: 0 12px; border-radius: 14px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 12px; z-index: 2; }
+.unlock { position: absolute; top: 4px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 5px; height: 28px; padding: 0 12px; border-radius: 14px; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 12px; z-index: 2; }
 .unlock:hover { background: rgba(42, 98, 255, 0.9); }
 </style>

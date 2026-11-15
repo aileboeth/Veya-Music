@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, session, shell, Tray } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import { flushAll, load, save } from './store'
@@ -99,6 +99,23 @@ const saveLyricConf = (patch: any) => {
   sendLyric('lyric:conf', s.desktopLyric)
 }
 
+/** 桌面歌词窗口的高度：刚好放下歌词（单行 + 翻译，或双行）和顶部的控制条 */
+const lyricHeight = (conf: any) => {
+  const fs = conf.fontSize ?? 30
+  const lines = conf.mode == 'double' ? fs * 1.5 * 2 : fs * 1.5 + fs * 0.56 * 1.5 + 2
+  return Math.round(lines + 36 + 8)
+}
+const fitLyricWindow = () => {
+  if (!lyricWin || lyricWin.isDestroyed()) return
+  const conf = lyricConf() as any
+  const h = lyricHeight(conf)
+  const b = lyricWin.getBounds()
+  if (Math.abs(b.height - h) < 3) return
+  lyricWin.setMinimumSize(320, h)
+  lyricWin.setMaximumSize(10000, h)
+  lyricWin.setBounds({ x: b.x, y: b.y, width: conf.width ?? 640, height: h })
+}
+
 const applyLyricLock = () => {
   if (!lyricWin || lyricWin.isDestroyed()) return
   lyricWin.setIgnoreMouseEvents(!!lyricConf().locked, { forward: true })
@@ -108,8 +125,14 @@ const openLyricWindow = () => {
   if (lyricWin && !lyricWin.isDestroyed()) return
   const conf = lyricConf() as any
   const area = screen.getPrimaryDisplay().workArea
-  const width = conf.width ?? 900
-  const height = conf.height ?? 150
+  // 0.1.8 起窗口改小：宽度默认 640（可以自己拉宽），高度跟着字号和单/双行自动算，不再留一大片空白挡住别的软件
+  if (conf.sizeV != 2) {
+    if (conf.x != null && conf.width) conf.x = Math.round(conf.x + (conf.width - 640) / 2)
+    conf.width = 640
+    saveLyricConf({ width: 640, x: conf.x, sizeV: 2 })
+  }
+  const width = conf.width ?? 640
+  const height = lyricHeight(conf)
   let x = conf.x ?? Math.round(area.x + (area.width - width) / 2)
   let y = conf.y ?? area.y + area.height - height - 40
   const visible = screen.getAllDisplays().some(d => x + 100 > d.workArea.x && x < d.workArea.x + d.workArea.width - 100 && y >= d.workArea.y - 10 && y < d.workArea.y + d.workArea.height - 40)
@@ -119,8 +142,9 @@ const openLyricWindow = () => {
   }
   lyricWin = new BrowserWindow({
     width, height, x, y,
-    minWidth: 380,
-    minHeight: 90,
+    minWidth: 320,
+    minHeight: height,
+    maxHeight: height,
     frame: false,
     transparent: true,
     alwaysOnTop: true,
@@ -139,7 +163,7 @@ const openLyricWindow = () => {
     applyLyricLock()
   })
   lyricWin.on('resized', () => {
-    if (lyricWin && !lyricWin.isDestroyed()) saveLyricConf(lyricWin.getBounds())
+    if (lyricWin && !lyricWin.isDestroyed()) { const b = lyricWin.getBounds(); saveLyricConf({ x: b.x, y: b.y, width: b.width }) }
   })
   lyricWin.on('closed', () => {
     lyricWin = null
@@ -312,6 +336,7 @@ const api: Record<string, (...args: any[]) => any> = {
   'lyric.conf': () => lyricConf(),
   'lyric.setConf': (patch: any) => {
     saveLyricConf(patch)
+    if (patch && ('fontSize' in patch || 'mode' in patch)) fitLyricWindow()
     applyLyricLock()
     updateTray()
   },
@@ -326,7 +351,7 @@ const api: Record<string, (...args: any[]) => any> = {
     // 用设置里记的宽高，而不是 getBounds 读回来的（缩放不是 100% 时每读写一次会大 1 像素）
     const conf = lyricConf() as any
     const x = Math.round(area.x + (area.width - b.width) / 2)
-    win.setBounds({ x, y, width: conf.width ?? 900, height: conf.height ?? 150 })
+    win.setBounds({ x, y, width: conf.width ?? 640, height: lyricHeight(conf) })
     saveLyricConf({ x, y })
   },
   'lyric.ready': () => { sendMain('lyric:request') },
@@ -394,6 +419,14 @@ if (!app.requestSingleInstanceLock()) {
     })
     dl.initDownload(tasks => sendMain('downloads:changed', tasks))
     initIpc()
+    // 播放页的律动效果要读音频数据：给音频响应补上允许跨域的响应头，否则跨域音频读出来全是 0
+    session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
+      if (details.resourceType != 'media') return callback({})
+      const headers: Record<string, string[]> = { ...details.responseHeaders }
+      for (const k of Object.keys(headers)) if (/^access-control-allow-(origin|credentials)$/i.test(k)) delete headers[k]
+      headers['Access-Control-Allow-Origin'] = ['*']
+      callback({ responseHeaders: headers })
+    })
     createMainWindow()
     createTray()
     updater.initUpdater(state => sendMain('update:state', state), () => { quitting = true })

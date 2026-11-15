@@ -10,6 +10,17 @@ import { go, pickListFor } from '../ui'
 import Cover from './Cover.vue'
 import Icon from './Icon.vue'
 import KaraokeLine from './KaraokeLine.vue'
+import Visualizer from './Visualizer.vue'
+
+// ---- 布局和律动效果 ----
+const np = computed(() => settings.nowPlaying)
+const LAYOUT_NAME: Record<string, string> = { side: '封面在左', center: '封面居中' }
+const VISUAL_NAME: Record<string, string> = { ring: '环形律动', wave: '波浪音符', bars: '频谱跳动', off: '关闭律动' }
+const cycle = <K extends 'layout' | 'visual'>(key: K, values: string[]) => {
+  (settings.nowPlaying as any)[key] = values[(values.indexOf(settings.nowPlaying[key]) + 1) % values.length]
+}
+const coverSize = computed(() => np.value.layout == 'center' ? 176 : np.value.visual == 'ring' ? 270 : 300)
+const ring = computed(() => np.value.visual == 'ring')
 
 const lyricEl = ref<HTMLElement | null>(null)
 let userScrollAt = 0
@@ -81,12 +92,22 @@ const searchSinger = () => {
     <div v-if="player.showNowPlaying && player.song" class="now">
       <div class="bg" :style="player.cover ? { backgroundImage: `url(${thumb(player.cover, 300)})` } : {}" />
       <div class="scrim" />
+      <!-- 两团慢慢漂的彩色光：给玻璃面板后面一点可以「透」出来的东西 -->
+      <div class="orb a" /><div class="orb b" />
       <header>
         <button class="icon-btn" title="收起" @click="player.showNowPlaying = false"><Icon name="down" :size="22" /></button>
+        <button class="pill" title="切换布局：封面在左侧 / 封面居中在上" @click="cycle('layout', ['side', 'center'])">{{ LAYOUT_NAME[np.layout] }}</button>
+        <button class="pill" title="切换律动效果：环形 / 波浪音符 / 频谱 / 关闭" @click="cycle('visual', ['ring', 'wave', 'bars', 'off'])">{{ VISUAL_NAME[np.visual] }}</button>
       </header>
-      <div class="content">
-        <div class="left">
-          <Cover class="big-cover" :class="{ playing: player.playing }" :src="player.cover" :text="player.song.name" :size="300" :radius="22" :px="500" />
+      <!-- 波浪 / 频谱铺在页面底部 -->
+      <div v-if="np.visual == 'wave' || np.visual == 'bars'" class="viz-bottom" :class="np.visual"><Visualizer :type="np.visual" :playing="player.playing" /></div>
+      <div class="content" :class="['l-' + np.layout, { ring }]">
+        <div class="left glass">
+          <div class="cover-wrap" :style="{ width: coverSize + 'px', height: coverSize + 'px' }">
+            <!-- 环形律动围着封面转 -->
+            <div v-if="ring" class="viz-ring"><Visualizer type="ring" :playing="player.playing" :radius="coverSize / 2" /></div>
+            <Cover class="big-cover" :class="{ playing: player.playing, round: ring }" :src="player.cover" :text="player.song.name" :size="coverSize" :radius="ring ? coverSize / 2 : 22" :px="500" />
+          </div>
           <div class="name">{{ player.song.name }}</div>
           <button class="singer" title="搜索这位歌手" @click="searchSinger">{{ player.song.singer }}</button>
           <div class="album dim ellipsis">
@@ -101,7 +122,7 @@ const searchSinger = () => {
             <button class="icon-btn" title="定位：回到这首歌所在的列表" @click="locate"><Icon name="locate" :size="21" /></button>
           </div>
         </div>
-        <div class="right">
+        <div class="right glass">
           <div ref="lyricEl" class="lyric" :class="{ browsing }" @wheel.passive="onWheel">
             <template v-if="player.lyric.length">
               <div class="pad" />
@@ -137,7 +158,30 @@ header { position: relative; height: 44px; display: flex; align-items: center; p
 header .icon-btn { -webkit-app-region: no-drag; }
 .content { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(340px, 0.9fr) minmax(0, 1.1fr); gap: 20px; padding: 0 48px 24px; }
 .left { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-width: 0; text-align: center; }
-.big-cover { box-shadow: 0 24px 60px rgba(20, 30, 70, 0.35); margin-bottom: 22px; transition: transform .5s ease; transform: scale(0.94); }
+header .pill { -webkit-app-region: no-drag; height: 26px; padding: 0 12px; margin-left: 8px; border-radius: 13px; font-size: 12px; font-weight: 600; color: var(--text2); background: var(--card); border: 1px solid var(--border); transition: all .15s; }
+header .pill:hover { color: var(--accent); background: var(--panel-strong); }
+.viz-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 40%; pointer-events: none; mask-image: linear-gradient(180deg, transparent 0, #000 45%); }
+.viz-bottom.bars { height: 26%; left: 6%; right: 6%; mask-image: none; opacity: .75; }
+.cover-wrap { position: relative; margin-bottom: 22px; flex: none; }
+.viz-ring { position: absolute; inset: -84px; pointer-events: none; }
+.ring .cover-wrap { margin: 70px 0 84px; }
+.big-cover { position: relative; box-shadow: 0 24px 60px rgba(20, 30, 70, 0.35); transition: transform .5s ease, border-radius .4s; transform: scale(0.94); }
+/* 环形律动时封面变成一张慢慢转的唱片 */
+.big-cover.round { animation: spin 26s linear infinite; animation-play-state: paused; transform: none; }
+.big-cover.round.playing { animation-play-state: running; }
+@keyframes spin { to { transform: rotate(360deg); } }
+/* 封面居中：封面和歌名在上，歌词在下面居中 */
+.content.l-center { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); gap: 4px; justify-items: center; padding-bottom: 12px; }
+.l-center .left { justify-content: flex-start; gap: 3px; }
+.l-center .cover-wrap { margin: 6px 0 12px; }
+.l-center.ring .cover-wrap { margin: 62px 0 70px; }
+.l-center .name { font-size: 19px; }
+.l-center .album, .l-center .acts { display: none; }
+.l-center .right { width: min(760px, 100%); }
+.l-center .lyric { text-align: center; }
+.l-center .line { transform-origin: center; font-size: 22px; padding: 8px 18px; }
+.l-center .dots { justify-content: center; transform-origin: center; }
+.l-center .pad { height: 34%; }
 .big-cover.playing { transform: scale(1); }
 .name { font-size: 22px; font-weight: 700; max-width: 100%; user-select: text; }
 .singer { font-size: 15px; color: var(--text2); }
@@ -170,4 +214,28 @@ header .icon-btn { -webkit-app-region: no-drag; }
 .no-lyric { height: 100%; display: flex; align-items: center; justify-content: center; color: var(--text3); font-size: 16px; }
 .rise-enter-active, .rise-leave-active { transition: transform .32s cubic-bezier(.2, .8, .2, 1), opacity .25s; }
 .rise-enter-from, .rise-leave-to { transform: translateY(40px); opacity: 0; }
+/* ---------- 玻璃材质 ---------- */
+.bg { opacity: .82; filter: blur(60px) saturate(1.9); }
+.scrim { background: linear-gradient(180deg, color-mix(in srgb, var(--bg) 26%, transparent), color-mix(in srgb, var(--bg) 52%, transparent)); }
+.orb { position: absolute; width: 46vw; height: 46vw; border-radius: 50%; filter: blur(70px); opacity: .5; pointer-events: none; }
+.orb.a { left: -10vw; top: -14vw; background: radial-gradient(circle, #46d6f0 0%, transparent 68%); animation: drift-a 26s ease-in-out infinite alternate; }
+.orb.b { right: -12vw; bottom: -16vw; background: radial-gradient(circle, #9a5cff 0%, transparent 68%); animation: drift-b 32s ease-in-out infinite alternate; }
+@keyframes drift-a { to { transform: translate(16vw, 12vw) scale(1.15); } }
+@keyframes drift-b { to { transform: translate(-18vw, -10vw) scale(0.9); } }
+.glass {
+  border-radius: 30px;
+  background: linear-gradient(135deg, color-mix(in srgb, var(--panel-strong) 46%, transparent), color-mix(in srgb, var(--panel-strong) 16%, transparent));
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  box-shadow: 0 24px 70px rgba(20, 30, 70, 0.16), inset 0 1px 0 rgba(255, 255, 255, 0.5), inset 0 -1px 0 rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(30px) saturate(1.7);
+}
+:global(html[data-theme='dark'] .now .glass) { border-color: rgba(255, 255, 255, 0.12); box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.14); }
+.content { gap: 22px; padding: 4px 36px 26px; }
+.left.glass { padding: 26px 22px; }
+.right.glass { padding: 6px 14px; overflow: hidden; }
+header .pill { background: color-mix(in srgb, var(--panel-strong) 40%, transparent); border-color: rgba(255, 255, 255, 0.3); backdrop-filter: blur(20px); }
+.acts .icon-btn { background: color-mix(in srgb, var(--panel-strong) 55%, transparent); border: 1px solid rgba(255, 255, 255, 0.28); }
+/* 封面居中：上面的封面不要面板，只有歌词是一块玻璃 */
+.l-center .left.glass { background: none; border: 0; box-shadow: none; backdrop-filter: none; padding: 0; }
+.l-center .right.glass { margin-bottom: 4px; }
 </style>

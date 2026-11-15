@@ -51,11 +51,38 @@ const reset = () => {
   progress.value = ''
 }
 
+/** 同步更新：不用粘贴链接，直接预览原歌单里新增的歌 */
+const syncing = ref(false)
+
+/** 拿到歌单内容后进入预览；返回 false 表示没有可以新增的歌 */
+const enterPreview = (r: any, old: MyList | undefined) => {
+  const have = new Set(old?.songs.map(s => s.id))
+  const seen = new Set<string>()
+  const fresh = (r.songs as Song[]).filter(s => !have.has(s.id) && !seen.has(s.id) && !!seen.add(s.id))
+  if (old && !fresh.length) return false
+  // 以前从这个歌单里删掉的歌默认不勾
+  const removed = new Set(old?.removed ?? [])
+  result.value = r
+  exist.value = old
+  rows.value = fresh
+  picked.value = new Set(fresh.filter(s => !removed.has(s.id)).map(s => s.id))
+  name.value = old?.name ?? r.name
+  step.value = 'preview'
+  return true
+}
+
 watch(() => importDialog.show, show => {
   if (!show) return
   text.value = ''
   hint.value = ''
   reset()
+  const preset = importDialog.preset
+  syncing.value = !!preset
+  if (preset) {
+    const old = lists.find(l => l.id == preset.listId)
+    if (!old || !enterPreview(preset.result, old)) importDialog.show = false
+    return
+  }
   void nextTick(() => inputEl.value?.focus())
 })
 
@@ -81,23 +108,12 @@ const run = async() => {
     if (!busy.value) return
     if (!r.songs.length) throw new Error('歌单里的歌一首都没有匹配到')
     const old = r.source ? lists.find(l => l.source == r.source && l.sourceListId == r.sourceListId) : undefined
-    const have = new Set(old?.songs.map(s => s.id))
-    const seen = new Set<string>()
-    const fresh = (r.songs as Song[]).filter(s => !have.has(s.id) && !seen.has(s.id) && !!seen.add(s.id))
-    if (old && !fresh.length) {
+    if (!enterPreview(r, old)) {
       importDialog.show = false
-      go('mylist', { id: old.id })
-      toast(`「${old.name}」之前导入过，没有新增的歌`, 'success')
+      go('mylist', { id: old!.id })
+      toast(`「${old!.name}」之前导入过，没有新增的歌`, 'success')
       return
     }
-    // 以前从这个歌单里删掉的歌默认不勾
-    const removed = new Set(old?.removed ?? [])
-    result.value = r
-    exist.value = old
-    rows.value = fresh
-    picked.value = new Set(fresh.filter(s => !removed.has(s.id)).map(s => s.id))
-    name.value = old?.name ?? r.name
-    step.value = 'preview'
   } catch (err: any) {
     if (busy.value && !/已取消/.test(err.message)) void alertDialog('导入失败', err.message)
   } finally {
@@ -117,10 +133,16 @@ const toggleAll = () => {
   picked.value = set
 }
 
+/** 进预览时默认勾了几首（= 真正新增的；其余是以前删掉的） */
+const defaultPicked = computed(() => {
+  const removed = new Set(exist.value?.removed ?? [])
+  return rows.value.filter(s => !removed.has(s.id)).length
+})
+
 const save = () => {
   const r = result.value
   const chosen = rows.value.filter(s => picked.value.has(s.id))
-  if (!chosen.length) return
+  if (!chosen.length && !syncing.value) return
   // 没勾的歌记下来：以后「同步更新」不会又把它们加回来
   const dropped = rows.value.filter(s => !picked.value.has(s.id)).map(s => s.id)
   let target = exist.value
@@ -132,7 +154,7 @@ const save = () => {
   }
   importDialog.show = false
   go('mylist', { id: target.id })
-  toast(exist.value ? `已往「${target.name}」里新增 ${chosen.length} 首` : `已从${r.platformName}导入「${target.name}」，共 ${chosen.length} 首`, 'success', 4000)
+  toast(exist.value ? (chosen.length ? `已往「${target.name}」里新增 ${chosen.length} 首` : `「${target.name}」没有新增歌曲`) : `已从${r.platformName}导入「${target.name}」，共 ${chosen.length} 首`, 'success', 4000)
 }
 </script>
 
@@ -163,14 +185,15 @@ const save = () => {
       </div>
 
       <div v-else class="modal wide" @keydown.esc="close">
-        <h3>预览歌单</h3>
+        <h3>{{ syncing ? '同步更新' : '预览歌单' }}</h3>
         <div class="row gap8 name-row">
           <span class="dim">歌单名</span>
           <input v-model="name" class="input name-input" maxlength="60" spellcheck="false" :disabled="!!exist" />
           <span class="badge src">{{ result.platformName }}</span>
         </div>
         <p class="tip sum">
-          <template v-if="exist">这个歌单之前导入过，下面是这次<b>新增的 {{ rows.length }} 首</b>。</template>
+          <template v-if="syncing">原歌单里有 <b>{{ rows.length }} 首</b>你这边没有的歌；其中你以前删掉的 {{ rows.length - defaultPicked }} 首默认不勾，想要回来就勾上。</template>
+          <template v-else-if="exist">这个歌单之前导入过，下面是这次<b>新增的 {{ rows.length }} 首</b>。</template>
           <template v-else>共读取到 <b>{{ rows.length }}</b> 首。</template>
           把不想要的歌取消勾选，再点保存；点歌名前的 ▶ 可以先试听。
           <template v-if="result.missing.length">
@@ -199,10 +222,10 @@ const save = () => {
         </div>
 
         <div class="btns">
-          <button class="btn" @click="reset">返回</button>
+          <button v-if="!syncing" class="btn" @click="reset">返回</button>
           <span class="spacer" />
           <button class="btn" @click="close">取消</button>
-          <button class="btn primary" :disabled="!picked.size" @click="save">{{ exist ? `添加 ${picked.size} 首到歌单` : `保存 ${picked.size} 首到我的歌单` }}</button>
+          <button class="btn primary" :disabled="!picked.size && !syncing" @click="save">{{ exist ? `添加 ${picked.size} 首到歌单` : `保存 ${picked.size} 首到我的歌单` }}</button>
         </div>
       </div>
     </div>

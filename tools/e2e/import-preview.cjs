@@ -57,11 +57,25 @@ module.exports = async({ api, js, shot, sleep, log, win, waitFor }) => {
   await sleep(600)
   log('after batch delete', await count(), '|', await listState())
 
-  // 5. 同步更新：删掉的不回来
+  // 5. 同步更新：没有真正新增的歌 → 不弹预览，删掉的也不回来
   await js(`[...document.querySelectorAll('.hero-btns .btn')].find(b => b.textContent.includes('同步更新')).click()`)
-  await sleep(6000)
-  log('after sync', await count(), '| toast', await js(`return [...document.querySelectorAll('.toast')].map(t => t.textContent)`), '|', await listState())
+  await waitFor(`document.querySelector('.toast')`, 15000)
+  log('after sync', await count(), '| toast', await js(`return [...document.querySelectorAll('.toast')].map(t => t.textContent)`), '| preview?', await js(`return !!document.querySelector('.modal.wide')`), '|', await listState())
   await shot('72-list-after-sync')
+
+  // 5b.「…」→ 找回删掉的歌：进同步预览，默认都不勾，勾两首再保存
+  await js(`[...document.querySelectorAll('.hero-btns .btn')].find(b => b.title == '更多').click()`)
+  await sleep(400)
+  await js(`const els = [...document.querySelectorAll('button, .item, li, div')].filter(e => e.textContent.trim().startsWith('找回删掉的歌')); els[els.length - 1].click()`)
+  log('sync preview shown', await waitFor(`document.querySelector('.modal.wide')`, 30000))
+  await sleep(500)
+  log('sync preview', await js(`return document.querySelector('.modal.wide h3').textContent + ' | ' + document.querySelector('.modal.wide .sum').textContent.replace(/\\s+/g, ' ').trim().slice(0, 70) + ' | ' + document.querySelector('.modal.wide .count').textContent + ' | back btn ' + [...document.querySelectorAll('.modal.wide .btn')].some(b => b.textContent.trim() == '返回')`))
+  await js(`const items = document.querySelectorAll('.modal.wide .item'); items[0].click(); items[1].click()`)
+  await sleep(300)
+  await shot('74-sync-preview')
+  await js(`document.querySelector('.modal.wide .btn.primary').click()`)
+  await sleep(1200)
+  log('after restore 2', await count(), '| toast', await js(`return [...document.querySelectorAll('.toast')].map(t => t.textContent)`), '|', await listState())
 
   // 6. 再导入一次同一个歌单：没有新增（删掉的默认不勾 → 进预览且全未勾）
   await js(`document.querySelector('.lists-head .icon-btn').click()`)

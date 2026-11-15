@@ -31,6 +31,40 @@ export const player = reactive({
 
 const audio = new Audio()
 audio.preload = 'auto'
+// 律动效果要读音频数据，跨域的音频必须按 CORS 方式加载（主进程会给音频响应补上允许跨域的响应头）
+audio.crossOrigin = 'anonymous'
+
+// ---------------- 频谱（播放页的律动效果用） ----------------
+let actx: AudioContext | null = null
+let analyser: AnalyserNode | null = null
+let analyserFailed = false
+const ensureAnalyser = () => {
+  if (analyser || analyserFailed) return analyser
+  try {
+    actx = new AudioContext()
+    const src = actx.createMediaElementSource(audio)
+    analyser = actx.createAnalyser()
+    analyser.fftSize = 512
+    analyser.smoothingTimeConstant = 0.8
+    src.connect(analyser)
+    analyser.connect(actx.destination)
+  } catch {
+    analyserFailed = true
+    analyser = null
+  }
+  return analyser
+}
+/** 把当前的频谱（0~255，低频在前）写进 out；拿不到时返回 false */
+export const readSpectrum = (out: Uint8Array<ArrayBuffer>) => {
+  const a = ensureAnalyser()
+  if (!a || !actx) return false
+  if (actx.state == 'suspended') void actx.resume().catch(() => {})
+  a.getByteFrequencyData(out)
+  return true
+}
+audio.addEventListener('play', () => { if (actx?.state == 'suspended') void actx.resume().catch(() => {}) })
+// 自动化巡检用：当前频谱的总能量（-1 = 读不到）
+;(window as any).__veyaSpectrum = () => { const a = new Uint8Array(256); return readSpectrum(a) ? a.reduce((n, v) => n + v, 0) : -1 }
 let token = 0
 let failCount = 0
 let errorRetries = 0
@@ -110,8 +144,8 @@ const settleStats = (manualSkip: boolean, ended = false) => {
   const song = player.song
   if (!song || !started) return
   const dur = player.duration || parseInterval(song.interval) || 240
-  if (ended || listened >= dur * 0.8) void api('stats.record', song, 'done')
-  else if (manualSkip && listened < Math.min(30, dur * 0.3)) void api('stats.record', song, 'skip')
+  if (ended || listened >= dur * 0.8) void api('stats.record', song, 'done', player.source?.type)
+  else if (manualSkip && listened < Math.min(30, dur * 0.3)) void api('stats.record', song, 'skip', player.source?.type)
   started = false
 }
 
@@ -196,7 +230,7 @@ audio.addEventListener('playing', () => {
   lastTick = audio.currentTime
   if (!started && player.song) {
     started = true
-    void api('stats.record', player.song, 'play')
+    void api('stats.record', player.song, 'play', player.source?.type)
   }
   syncState()
 })
@@ -445,6 +479,11 @@ export const startPersonalRadio = async() => {
 
 const modes = ['order', 'loop', 'shuffle', 'single'] as const
 export const modeNames: Record<string, string> = { order: '顺序播放', loop: '列表循环', shuffle: '随机播放', single: '单曲循环' }
+export const playModes = modes
+export const setMode = (mode: typeof modes[number]) => {
+  settings.playMode = mode
+  toast(modeNames[mode] + (mode == 'order' && settings.autoContinue ? '（播完自动续播相似歌曲）' : ''))
+}
 export const cycleMode = () => {
   settings.playMode = modes[(modes.indexOf(settings.playMode) + 1) % modes.length]
   toast(modeNames[settings.playMode] + (settings.playMode == 'order' && settings.autoContinue ? '（播完自动续播相似歌曲）' : ''))

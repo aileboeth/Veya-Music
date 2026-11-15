@@ -2,7 +2,7 @@
 import { computed, ref } from 'vue'
 import { formatTime, QUALITYS, qualityName } from '../api'
 import { isLoved, toggleLove } from '../lists'
-import { cycleMode, modeNames, next, player, prev, seek, setQuality, toggle, toggleDesktopLyric } from '../player'
+import { modeNames, next, player, playModes, prev, seek, setMode, setQuality, toggle, toggleDesktopLyric } from '../player'
 import { settings } from '../settings'
 import { dislike } from '../songMenu'
 import { go, openMenu } from '../ui'
@@ -30,6 +30,17 @@ const openQualityMenu = (e: MouseEvent) => {
     label: `${q.name}  ${q.desc}`,
     icon: settings.quality == q.id ? 'check' : undefined,
     action: () => setQuality(q.id),
+  })))
+}
+
+const MODE_SHORT: Record<string, string> = { order: '顺序', loop: '循环', shuffle: '随机', single: '单曲' }
+/** 播放模式：点开菜单直接选，不用一下一下轮着切 */
+const openModeMenu = (e: MouseEvent) => {
+  const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+  openMenu({ x: rect.left - 30, y: rect.top - 8 - playModes.length * 36 }, playModes.map(m => ({
+    label: modeNames[m] + (m == 'order' && settings.autoContinue ? '（播完续播相似歌曲）' : ''),
+    icon: settings.playMode == m ? 'check' : m,
+    action: () => setMode(m),
   })))
 }
 
@@ -70,14 +81,14 @@ const locate = () => {
 
     <div class="center">
       <div class="controls">
-        <button class="icon-btn" :title="modeNames[settings.playMode]" @click="cycleMode"><Icon :name="settings.playMode" :size="18" /></button>
+        <button class="mode" :class="{ on: settings.playMode != 'order' }" :title="`播放模式：${modeNames[settings.playMode]}（点击切换）`" @click="openModeMenu"><Icon :name="settings.playMode" :size="17" /><span>{{ MODE_SHORT[settings.playMode] }}</span></button>
         <button class="icon-btn big" title="上一首 (Ctrl+←)" @click="prev"><Icon name="prev" :size="22" /></button>
         <button class="play" :title="player.playing ? '暂停 (空格)' : '播放 (空格)'" @click="toggle">
           <span v-if="player.loading" class="spinner light" />
           <Icon v-else :name="player.playing ? 'pause' : 'play'" :size="22" />
         </button>
         <button class="icon-btn big" title="下一首 (Ctrl+→)" @click="next()"><Icon name="next" :size="22" /></button>
-        <button class="icon-btn" :class="{ on: player.lyricWindow }" title="桌面歌词" @click="toggleDesktopLyric"><span class="ci">词</span></button>
+        <span class="side"><button class="icon-btn" :class="{ on: player.lyricWindow }" title="桌面歌词" @click="toggleDesktopLyric"><span class="ci">词</span></button></span>
       </div>
       <div class="progress">
         <span class="time">{{ formatTime(shownTime) }}</span>
@@ -121,6 +132,12 @@ const locate = () => {
 .center { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .controls { display: flex; align-items: center; justify-content: center; gap: 10px; }
 .icon-btn.big { width: 36px; height: 36px; color: var(--text); }
+/* 播放模式按钮：图标 + 文字，和右边的「词」对称占位，播放键保持在正中 */
+.mode, .side { width: 68px; flex: none; }
+.mode { display: flex; align-items: center; justify-content: flex-end; gap: 4px; height: 30px; padding: 0 8px; border-radius: 15px; font-size: 12px; font-weight: 600; color: var(--text2); transition: all .15s; }
+.mode:hover { background: var(--hover); color: var(--text); }
+.mode.on { color: var(--accent); }
+.side { display: flex; }
 .play {
   width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; background: var(--grad);
   box-shadow: 0 6px 18px rgba(42, 98, 255, 0.35); transition: transform .12s, filter .15s;

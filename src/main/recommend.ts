@@ -11,7 +11,8 @@ import { boardDetail, normSongs, rawSdk, searchMusic, searchSongLists, songLists
 
 const DAY = 86400_000
 
-export interface SongStat { s: any, plays: number, done: number, skips: number, last: number, first: number }
+/** sp = 从搜索结果里点开播放的次数；days = 在多少个不同的日子里听过（day 是最近一次的日期） */
+export interface SongStat { s: any, plays: number, done: number, skips: number, last: number, first: number, sp?: number, days?: number, day?: string }
 interface Stats { songs: Record<string, SongStat>, recent: Array<{ id: string, t: number }> }
 
 export const getStats = () => load<Stats>('stats', { songs: {}, recent: [] })
@@ -24,7 +25,7 @@ const mainSinger = (song: any) => singersOf(song.singer)[0] ?? ''
 const nameKey = (song: any) => `${String(song.name).replace(/[（(【\[].*?[）)】\]]/g, '').replace(/\s+/g, '').toLowerCase()}|${mainSinger(song).toLowerCase()}`
 
 // ---------- 记录听歌行为 ----------
-export const record = (song: any, type: 'play' | 'done' | 'skip') => {
+export const record = (song: any, type: 'play' | 'done' | 'skip', from?: string) => {
   if (!song?.id) return
   const stats = getStats()
   const now = Date.now()
@@ -33,6 +34,12 @@ export const record = (song: any, type: 'play' | 'done' | 'skip') => {
   st.last = now
   if (type == 'play') {
     st.plays++
+    if (from == 'search') st.sp = (st.sp ?? 0) + 1
+    const day = new Date(now).toDateString()
+    if (st.day != day) {
+      st.day = day
+      st.days = (st.days ?? 0) + 1
+    }
     stats.recent = stats.recent.filter(r => r.id != song.id)
     stats.recent.unshift({ id: song.id, t: now })
     if (stats.recent.length > 300) stats.recent.length = 300
@@ -72,12 +79,26 @@ const librarySongIds = () => {
 export const buildProfile = () => {
   const stats = getStats()
   const now = Date.now()
-  const weights = new Map<string, { song: any, w: number }>()
+  const weights = new Map<string, { song: any, w: number, searched?: boolean }>()
+  const library = librarySongIds()
   for (const [id, st] of Object.entries(stats.songs)) {
-    const base = st.done * 1 + st.plays * 0.3 - st.skips * 0.7
+    let base = st.done * 1 + st.plays * 0.3 - st.skips * 0.7
+    // 主动搜来听的歌比被动刷到的更能说明口味，但要先确认不是「只是好奇点开听听」：
+    // - 搜了、没听完、也没收藏 → 当作好奇，不算进口味
+    // - 搜了并完整听过一次 → 小幅加分
+    // - 之后又回来听（听完两次以上 / 隔天还听）或者收藏了 → 明确喜欢，大幅加分
+    let searched = false
+    if (st.sp) {
+      const kept = library.has(id)
+      if (!st.done && !kept) continue
+      if (kept || st.done > st.skips) {
+        searched = kept || st.done >= 2 || (st.days ?? 1) >= 2
+        base += searched ? 1.5 : 0.4
+      }
+    }
     if (base <= 0) continue
     const decay = Math.pow(0.5, (now - st.last) / (21 * DAY))
-    weights.set(id, { song: st.s, w: base * (0.25 + 0.75 * decay) })
+    weights.set(id, { song: st.s, w: base * (0.25 + 0.75 * decay), searched })
   }
   for (const song of lovedSongs()) {
     const cur = weights.get(song.id)
@@ -301,11 +322,11 @@ export const daily = async(force = false) => {
     const { seeds } = buildProfile()
     const picked = weightedSample(seeds.slice(0, 50), 12)
     const [groups, negative] = await Promise.all([
-      mapLimit(picked, 4, async p => ({ seed: p.song, w: p.w, list: await similarSongs(p.song) })),
+      mapLimit(picked, 4, async p => ({ seed: p.searched ? { ...p.song, _searched: 1 } : p.song, w: p.w, list: await similarSongs(p.song) })),
       negativeScores(),
     ])
     const ranked = rankCandidates(groups, { count: 30, perArtist: 2, negative })
-    const songs = ranked.map(r => ({ ...r.song, _rec: 1, _reason: `因为你听过《${r.reason.name}》` }))
+    const songs = ranked.map(r => ({ ...r.song, _rec: 1, _reason: r.reason._searched ? `因为你搜过并常听《${r.reason.name}》` : `因为你听过《${r.reason.name}》` }))
     const cold = songs.length < 12
     if (songs.length < 30) {
       const fill = await hotFallback(30 - songs.length, new Set(songs.map(s => s.id)), new Set(songs.map(nameKey)))

@@ -84,8 +84,10 @@ export const closeDialog = (value: any) => {
 }
 
 // ---------- 「导入歌单」对话框 ----------
-export const importDialog = reactive({ show: false })
-export const openImport = () => { importDialog.show = true }
+/** preset：不经过粘贴链接，直接带着读好的歌单进预览（「同步更新」用） */
+export const importDialog = reactive({ show: false, preset: null as null | { result: any, listId: string } })
+export const openImport = () => { importDialog.preset = null; importDialog.show = true }
+export const openSyncPreview = (result: any, listId: string) => { importDialog.preset = { result, listId }; importDialog.show = true }
 
 // ---------- 「添加到歌单」选择器 ----------
 export const listPicker = reactive({ show: false, songs: [] as any[] })
