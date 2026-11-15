@@ -83,6 +83,10 @@ export const closeDialog = (value: any) => {
   dialog.resolve = null
 }
 
+// ---------- 「导入歌单」对话框 ----------
+export const importDialog = reactive({ show: false })
+export const openImport = () => { importDialog.show = true }
+
 // ---------- 「添加到歌单」选择器 ----------
 export const listPicker = reactive({ show: false, songs: [] as any[] })
 export const pickListFor = (songs: any[]) => {

@@ -4,6 +4,7 @@ import { api } from './api'
 import logo from './assets/logo.svg'
 import Icon from './components/Icon.vue'
 import NowPlaying from './components/NowPlaying.vue'
+import ImportDialog from './components/ImportDialog.vue'
 import Overlays from './components/Overlays.vue'
 import PlayerBar from './components/PlayerBar.vue'
 import QueuePanel from './components/QueuePanel.vue'
@@ -11,7 +12,7 @@ import { createList, lists, removeList, type MyList } from './lists'
 import { next, player, playList, prev, toggle } from './player'
 import { settings } from './settings'
 import { installUpdate, update } from './update'
-import { back, confirmDialog, forward, go, openMenu, promptDialog, router, toast } from './ui'
+import { back, confirmDialog, forward, go, openImport, openMenu, promptDialog, router, toast } from './ui'
 import Boards from './views/Boards.vue'
 import Daily from './views/Daily.vue'
 import Discover from './views/Discover.vue'
@@ -148,6 +149,8 @@ onBeforeUnmount(() => {
       </nav>
       <div class="lists-head">
         <span>我的歌单</span>
+        <span class="spacer" />
+        <button class="icon-btn" title="导入歌单（网易云 / QQ / 酷狗 / 酷我 / 咪咕 / 汽水）" @click="openImport"><Icon name="link" :size="15" /></button>
         <button class="icon-btn" title="新建歌单" @click="newList"><Icon name="plus" :size="16" /></button>
       </div>
       <div class="lists">
@@ -197,6 +200,7 @@ onBeforeUnmount(() => {
     <NowPlaying />
     <QueuePanel />
     <PlayerBar class="bar" />
+    <ImportDialog />
     <Overlays />
   </div>
 </template>

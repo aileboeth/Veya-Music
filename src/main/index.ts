@@ -7,6 +7,7 @@ import * as music from './music'
 import * as rec from './recommend'
 import * as dl from './download'
 import { lxDbPath, readLxDatabase, readLxFile } from './lxImport'
+import { cancelImport, importPlaylist } from './listImport'
 import * as updater from './updater'
 import { applyProxy, setProxyHandlers } from './net'
 
@@ -254,6 +255,9 @@ const api: Record<string, (...args: any[]) => any> = {
   'rec.similar': rec.similarSongs,
   'rec.discover': rec.discover,
   'rec.dislike': rec.dislike,
+
+  'import.playlist': (text: string, hint = '') => importPlaylist(text, hint, p => sendMain('import:progress', p)),
+  'import.cancel': cancelImport,
 
   'lx.exists': () => fs.existsSync(lxDbPath()),
   'lx.readDb': readLxDatabase,

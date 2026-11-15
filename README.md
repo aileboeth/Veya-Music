@@ -15,6 +15,7 @@
   - 播完自动续播：顺序播放到列表末尾后自动接上相似歌曲
   - 发现页：猜你喜欢、为你推荐的歌单、排行榜、热门歌单
 - **我的歌单**：收藏在线歌单并可同步更新；从 LX Music 一键迁移「我的列表」
+- **导入歌单**：粘贴网易云音乐 / QQ 音乐 / 酷狗 / 酷我 / 咪咕 / 汽水音乐的歌单分享链接，自动识别平台并导入；其他 App 可以粘贴「歌名 - 歌手」文本，逐首匹配
 - **桌面歌词**、**歌曲下载**（含 .lrc）、浅色 / 深色主题、托盘、媒体键
 
 ## 开发
@@ -44,6 +45,8 @@ powershell -File tools\run-e2e.ps1 -Steps tools\e2e\features.cjs -Fresh
 ## 目录
 
 - `src/main` 主进程：`userApi.ts` 音源脚本运行、`music.ts` 在线数据、播放链接、选源与测速、`net.ts` 代理、`updater.ts` 自动更新、`recommend.ts` 推荐引擎、`download.ts`、`lxImport.ts`
+- `src/main/listImport.ts` 其他音乐 App 的歌单导入（识别分享链接、汽水音乐、文本歌单匹配）
+- `sources/` 从网上收集的可用音源脚本（第三方，说明见 [sources/README.md](sources/README.md)）
 - `src/main/lx` 来自 lx-music-desktop 的 musicSdk（Apache-2.0，见 `NOTICE`）
 - `src/preload` 预加载脚本（`userApi.js` 是音源脚本的受控运行环境）
 - `src/renderer` 界面（Vue 3）
@@ -51,3 +54,5 @@ powershell -File tools\run-e2e.ps1 -Steps tools\e2e\features.cjs -Fresh
 ## 说明
 
 本软件不提供任何音频内容，播放链接完全来自用户自行导入的音源脚本。
+
+[`sources/`](sources/) 里附带了一些实测可用的音源脚本，它们都是从网上公开渠道收集来的第三方脚本，版权归各自的作者所有，仅供学习交流，详见 [sources/README.md](sources/README.md)。

@@ -1,0 +1,41 @@
+# 音源脚本
+
+这里的脚本是 **从网上公开渠道收集来的 LX Music 自定义音源脚本**（各作者的发布页、QQ 群、Telegram 频道等），不是 Veya Music 的作者写的，也没有做任何修改。
+
+- 版权归各脚本的原作者所有，脚本里的 `@author`、`@homepage` 等信息原样保留。原作者如果不希望脚本出现在这里，请提 Issue，会马上移除。
+- 仅供学习和交流使用，请勿用于商业用途。
+- 脚本背后的接口由各作者自己维护，随时可能失效，这里不保证长期可用。
+- Veya Music 本身不提供任何音频内容，播放链接完全来自这些第三方脚本。
+
+## 怎么用
+
+下载这个文件夹（或其中的某几个 `.js` 文件），在 Veya Music 里打开「设置 → 音源管理 → 导入整个文件夹」（或「导入音源」选单个文件）。
+导入后点一下「测速」，播放时会自动优先使用又快又稳的音源；测速后可以用「停用 N 个失效音源」把全部失败的关掉。
+
+这些脚本同样可以在 LX Music 里使用。
+
+## 列表
+
+下面是 2026-11-15 实测的结果（逐个平台取播放链接并试下载），之后可能有变化。
+
+| 文件 | 版本 | 脚本里写的作者 | 实测可用的平台 |
+|---|---|---|---|
+| `fish_music 1.9.0.js` | 1.9.0 | 大鱼吃小鱼 | 酷我、酷狗、QQ、网易、咪咕 |
+| `Hei Music聚合源 v2.2.2.js` | v2.2.2 | Compile by CatXiaolan | 酷我、酷狗、QQ、网易、咪咕 |
+| `KxH测试 1.7.17.js` | 1.7.17 | HYW & Koneko | 酷我、酷狗、QQ、网易、咪咕 |
+| `lx-玉宁熙-Pro v1.2.2.js` | v1.2.2 | ynx | 酷我、酷狗、QQ、网易、咪咕 |
+| `墨澜聚合音源 2.3.4.js` | 2.3.4 | 白姬9527（<https://github.com/baiji6/molanyinyueyuan>） | 酷我、酷狗、QQ、网易、咪咕 |
+| `杰翔聚合音源 2.3.0.js` | 2.3.0 | 杰翔（<https://github.com/haonanren118/jiexiang-Music-Source>） | 酷我、酷狗、QQ、网易、咪咕 |
+| `aya v1.0.2.js` | v1.0.2 | aya（<https://t.me/aya_app_tool>） | 酷我、酷狗、网易、咪咕（不支持 QQ） |
+| `轻量音源 2.1.0.js` | 2.1.0 | 脚本里写的是「本地定制」 | 酷我、酷狗、QQ、网易（不支持咪咕） |
+| `Hello World 260925.js` | 260925 | hello world | 酷狗、QQ、网易、咪咕（酷我失败） |
+| `星海音乐源 v3.2.19.js` | v3.2.19 | 万去了了 / 科学大魔王（<https://zddyr.top/>） | 酷我、酷狗、网易、咪咕（QQ 失败） |
+| `lx-animemusic 3.0.1.js` | 3.0.1 | 惜缘惜梦（次惜科技） | 酷我、酷狗、网易（QQ 失败，不支持咪咕） |
+
+想自己重新测一遍：
+
+```powershell
+npm run build
+$env:VEYA_E2E_SOURCES = "$PWD\sources"
+powershell -File tools\run-e2e.ps1 -Steps tools\e2e\test-sources.cjs -Fresh
+```

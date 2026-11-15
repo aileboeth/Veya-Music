@@ -4,7 +4,7 @@ import { api, SOURCES } from '../api'
 import Icon from '../components/Icon.vue'
 import ListCard from '../components/ListCard.vue'
 import Page from '../components/Page.vue'
-import { go, promptDialog, toast } from '../ui'
+import { go, openImport, promptDialog, toast } from '../ui'
 
 defineProps<{ params: Record<string, any> }>()
 
@@ -89,6 +89,7 @@ const openByLink = async() => {
       </div>
       <span class="spacer" />
       <button class="btn small" title="用分享链接或 ID 打开歌单，之后可以收藏到「我的歌单」" @click="openByLink"><Icon name="link" :size="15" />打开歌单链接</button>
+      <button class="btn small primary" title="把其他音乐 App 的歌单导入到「我的歌单」" @click="openImport"><Icon name="download" :size="15" />导入歌单</button>
     </div>
 
     <div class="tags">

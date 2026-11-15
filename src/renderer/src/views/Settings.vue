@@ -6,7 +6,7 @@ import Page from '../components/Page.vue'
 import { importLists } from '../lists'
 import { player, toggleDesktopLyric } from '../player'
 import { settings } from '../settings'
-import { alertDialog, confirmDialog, toast } from '../ui'
+import { alertDialog, confirmDialog, openImport, toast } from '../ui'
 import { checkUpdate, installUpdate, showChangelog, update, updateText } from '../update'
 
 defineProps<{ params: Record<string, any> }>()
@@ -343,6 +343,10 @@ const setLyric = (patch: Record<string, any>) => void api('lyric.setConf', patch
 
     <section>
       <h2>数据</h2>
+      <div class="item">
+        <div><b>导入其他音乐 App 的歌单</b><span>网易云音乐、QQ 音乐、酷狗、酷我、咪咕、汽水音乐：粘贴歌单分享链接即可；其他 App 可以粘贴「歌名 - 歌手」文本</span></div>
+        <button class="btn small primary" @click="openImport">导入歌单</button>
+      </div>
       <div class="item">
         <div><b>从 LX Music 迁移歌单</b><span>{{ lxExists ? '检测到本机安装过 LX Music，可以直接读取「我的列表」（只读，不会改动 LX 的数据）' : '没有检测到本机的 LX Music 数据，可以用 LX 导出的列表文件导入' }}</span></div>
         <div class="row gap8">
