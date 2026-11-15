@@ -10,6 +10,8 @@ export interface MyList {
   /** 从在线歌单收藏而来时记录来源，用于「同步更新」 */
   source?: string
   sourceListId?: string
+  /** 用户从这个（收藏/导入来的）歌单里删掉的歌曲 id：「同步更新」时不再加回来 */
+  removed?: string[]
   createdAt?: number
 }
 
@@ -44,17 +46,25 @@ export const removeList = (id: string) => {
   if (i > -1) lists.splice(i, 1)
 }
 
-/** 添加歌曲（自动去重），返回实际新增的数量 */
-export const addSongs = (listId: string, songs: Song[], toTop = false) => {
+/**
+ * 添加歌曲（自动去重），返回实际新增的数量
+ * skipRemoved：同步原歌单时用，跳过用户以前从这个歌单里删掉的歌；手动添加则相反，会把它从「已删除」里拿掉
+ */
+export const addSongs = (listId: string, songs: Song[], toTop = false, skipRemoved = false) => {
   const list = getList(listId)
   if (!list) return 0
   const ids = new Set(list.songs.map(s => s.id))
+  const removed = new Set(list.removed ?? [])
   const fresh = raw(songs.filter(s => {
-    if (ids.has(s.id)) return false
+    if (ids.has(s.id) || (skipRemoved && removed.has(s.id))) return false
     ids.add(s.id)
     return true
   }))
   if (!fresh.length) return 0
+  if (!skipRemoved && removed.size) {
+    for (const s of fresh) removed.delete(s.id)
+    list.removed = [...removed]
+  }
   if (toTop) list.songs.unshift(...fresh)
   else list.songs.push(...fresh)
   return fresh.length
@@ -65,6 +75,14 @@ export const removeSongs = (listId: string, ids: string[]) => {
   if (!list) return
   const set = new Set(ids)
   list.songs = list.songs.filter(s => !set.has(s.id))
+  // 收藏/导入来的歌单：记住删掉了哪些，之后「同步更新」不会又加回来
+  if (list.sourceListId) list.removed = [...new Set([...(list.removed ?? []), ...ids])].slice(-5000)
+}
+
+/** 同步原歌单时会被跳过的歌曲数量（用户删掉的） */
+export const countRemoved = (listId: string, songs: Song[]) => {
+  const removed = new Set(getList(listId)?.removed ?? [])
+  return removed.size ? songs.filter(s => removed.has(s.id)).length : 0
 }
 
 export const toggleLove = (song: Song) => {

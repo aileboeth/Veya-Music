@@ -5,7 +5,7 @@ import Cover from '../components/Cover.vue'
 import Icon from '../components/Icon.vue'
 import Page from '../components/Page.vue'
 import SongList from '../components/SongList.vue'
-import { addSongs, getList, removeList } from '../lists'
+import { addSongs, countRemoved, getList, removeList } from '../lists'
 import { enqueue, playList } from '../player'
 import { settings } from '../settings'
 import { download } from '../songMenu'
@@ -32,8 +32,9 @@ const sync = async() => {
   syncing.value = true
   try {
     const r = await api('songlist.detail', l.source, l.sourceListId)
-    const n = addSongs(l.id, r.list)
-    toast(n ? `同步完成，新增 ${n} 首` : '已经是最新的了', 'success')
+    const n = addSongs(l.id, r.list, false, true)
+    const skipped = countRemoved(l.id, r.list)
+    toast((n ? `同步完成，新增 ${n} 首` : '已经是最新的了') + (skipped ? `（你删掉的 ${skipped} 首没有加回来）` : ''), 'success', 4000)
   } catch (err: any) {
     toast('同步失败：' + err.message, 'error')
   } finally {
@@ -53,6 +54,7 @@ const more = (e: MouseEvent) => {
       const name = await promptDialog('重命名歌单', l.name)
       if (name) l.name = name.slice(0, 60)
     } },
+    ...(l.removed?.length ? [{ label: `恢复删掉的 ${l.removed.length} 首（下次同步时加回来）`, icon: 'refresh', action: () => { l.removed = []; toast('已恢复，点「同步更新」就会把它们加回来', 'success', 4000) } }] : []),
     { label: '清空歌单', icon: 'trash', danger: true, disabled: !songs.value.length, action: async() => {
       if (await confirmDialog(`清空「${l.name}」？`, `将移除全部 ${songs.value.length} 首歌，此操作不能撤销。`, { okText: '清空', danger: true })) l.songs = []
     } },

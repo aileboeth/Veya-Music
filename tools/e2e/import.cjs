@@ -15,7 +15,15 @@ module.exports = async({ api, js, shot, sleep, log, win }) => {
     }
     return false
   }
-  const clickImport = () => js(`[...document.querySelectorAll('.modal .btn.primary')].find(b => b.textContent.trim() == '导入').click()`)
+  // 读取歌单 → 等预览出来 → 直接保存（预览本身的检查在 import-preview.cjs）
+  const clickImport = () => js(`
+    [...document.querySelectorAll('.modal .btn.primary')].find(b => b.textContent.trim() == '读取歌单').click()
+    const timer = setInterval(() => {
+      if (!document.querySelector('textarea.area') && !document.querySelector('.modal.wide')) return clearInterval(timer)
+      const btn = document.querySelector('.modal.wide .btn.primary')
+      if (btn) { clearInterval(timer); btn.click() }
+    }, 300)
+  `)
 
   // 各平台取一个真实的公开歌单，拼成 App 分享出来的样子
   const first = async(src) => (await api['songlist.lists'](src, null, null, 1)).list[0]

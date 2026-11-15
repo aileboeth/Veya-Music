@@ -2,7 +2,8 @@
 // 歌曲列表：虚拟滚动（几千首也流畅）、列表内筛选、高亮并「定位」正在播放的歌曲
 import { computed, inject, nextTick, onActivated, onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { bestQuality, qualityLabel, sourceName, type Song } from '../api'
-import { isLoved, toggleLove } from '../lists'
+import { isLoved, removeSongs, toggleLove } from '../lists'
+import { confirmDialog, toast } from '../ui'
 import { addNext, player, playList, toggle, type QueueSource } from '../player'
 import { dislike, openSongMenu } from '../songMenu'
 import Cover from './Cover.vue'
@@ -110,14 +111,57 @@ const play = (index: number) => {
   playList(props.songs, index, props.source)
 }
 const onMenu = (e: MouseEvent, song: Song, index: number) => {
+  if (manage.value) return e.preventDefault()
   openSongMenu(e, song, { listId: props.listId, recommend: props.recommend, play: () => play(index), onRemoved: () => emit('removed') })
 }
+
+// ---- 我的歌单：删除单首 / 批量管理 ----
+const manage = ref(false)
+const picked = ref(new Set<string>())
+const allPicked = computed(() => filtered.value.length > 0 && filtered.value.every(r => picked.value.has(r.song.id)))
+const togglePick = (id: string) => {
+  const set = new Set(picked.value)
+  if (!set.delete(id)) set.add(id)
+  picked.value = set
+}
+const pickAll = () => {
+  const set = new Set(picked.value)
+  for (const r of filtered.value) allPicked.value ? set.delete(r.song.id) : set.add(r.song.id)
+  picked.value = set
+}
+const exitManage = () => {
+  manage.value = false
+  picked.value = new Set()
+}
+const removeOne = (song: Song) => {
+  removeSongs(props.listId!, [song.id])
+  toast(`已从歌单删除《${song.name}》`)
+  emit('removed')
+}
+const removePicked = async() => {
+  const ids = [...picked.value]
+  if (!ids.length) return
+  if (!await confirmDialog(`从歌单删除选中的 ${ids.length} 首歌？`, '只是从这个歌单里移除，不会删除下载的文件。', { okText: '删除', danger: true })) return
+  removeSongs(props.listId!, ids)
+  toast(`已删除 ${ids.length} 首`, 'success')
+  exitManage()
+  emit('removed')
+}
+const onRowClick = (song: Song) => { if (manage.value) togglePick(song.id) }
+const onRowDbl = (index: number) => { if (!manage.value) play(index) }
+watch(() => props.listId, exitManage)
 </script>
 
 <template>
   <div ref="root" class="song-list">
     <div v-if="showToolbar && songs.length" class="toolbar">
       <slot name="toolbar" />
+      <template v-if="listId && manage">
+        <button class="btn small" @click="pickAll">{{ allPicked ? '取消全选' : '全选' }}</button>
+        <button class="btn small danger" :disabled="!picked.size" @click="removePicked"><Icon name="trash" :size="14" />删除所选（{{ picked.size }}）</button>
+        <button class="btn small" @click="exitManage">完成</button>
+      </template>
+      <button v-else-if="listId" class="btn small" title="勾选多首歌一起删除" @click="manage = true"><Icon name="edit" :size="14" />批量管理</button>
       <span class="spacer" />
       <span class="dim count">{{ filter ? `${filtered.length} / ${songs.length}` : songs.length }} 首</span>
       <div class="filter">
@@ -139,11 +183,12 @@ const onMenu = (e: MouseEvent, song: Song, index: number) => {
       <div class="rows" :style="{ transform: `translateY(${range.start * ROW_H}px)` }">
         <div
           v-for="(row, i) in visible" :key="row.song.id"
-          class="song-row" :class="{ playing: player.song?.id == row.song.id, flash: flashId == row.song.id }"
-          @dblclick="play(row.index)" @contextmenu="onMenu($event, row.song, row.index)"
+          class="song-row" :class="{ playing: player.song?.id == row.song.id, flash: flashId == row.song.id, managing: manage, picked: manage && picked.has(row.song.id) }"
+          @click="onRowClick(row.song)" @dblclick="onRowDbl(row.index)" @contextmenu="onMenu($event, row.song, row.index)"
         >
           <div class="c-idx">
-            <span v-if="player.song?.id == row.song.id" class="eq" :class="{ paused: !player.playing }"><i /><i /><i /></span>
+            <span v-if="manage" class="check" :class="{ on: picked.has(row.song.id) }"><Icon v-if="picked.has(row.song.id)" name="check" :size="12" /></span>
+            <span v-else-if="player.song?.id == row.song.id" class="eq" :class="{ paused: !player.playing }"><i /><i /><i /></span>
             <template v-else>
               <span class="num">{{ range.start + i + 1 }}</span>
               <button class="play-btn" title="播放" @click="play(row.index)"><Icon name="play" :size="15" /></button>
@@ -159,7 +204,8 @@ const onMenu = (e: MouseEvent, song: Song, index: number) => {
                 <span v-if="row.song._reason" class="reason ellipsis">{{ row.song._reason }}</span>
               </div>
             </div>
-            <div class="actions">
+            <div v-if="!manage" class="actions">
+              <button v-if="listId" class="icon-btn del" title="从歌单删除" @click.stop="removeOne(row.song)"><Icon name="trash" :size="16" /></button>
               <button class="icon-btn" :class="{ loved: isLoved(row.song) }" :title="isLoved(row.song) ? '取消喜欢' : '喜欢'" @click.stop="toggleLove(row.song)">
                 <Icon :name="isLoved(row.song) ? 'heart-fill' : 'heart'" :size="16" />
               </button>
@@ -227,6 +273,12 @@ const onMenu = (e: MouseEvent, song: Song, index: number) => {
 .song-row:hover .actions { display: flex; }
 .actions .icon-btn { width: 28px; height: 28px; }
 .actions .loved { color: #ff4d6d; }
+.actions .del:hover { color: var(--danger); }
+.toolbar .btn.small { display: inline-flex; align-items: center; gap: 5px; }
+.song-row.managing { cursor: pointer; }
+.song-row.picked { background: var(--active); }
+.check { width: 18px; height: 18px; border-radius: 5px; border: 1.500px solid var(--text3); display: flex; align-items: center; justify-content: center; color: #fff; }
+.check.on { background: var(--accent); border-color: var(--accent); }
 
 .eq { display: flex; align-items: flex-end; gap: 2.500px; height: 15px; }
 .eq i { width: 3px; border-radius: 2px; background: var(--grad); background: linear-gradient(180deg, #1f9bff, #8a46fb); animation: eq 0.900s ease-in-out infinite; }
