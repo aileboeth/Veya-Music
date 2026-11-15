@@ -1,0 +1,13 @@
+﻿Veya Music
+Copyright 2026 aileboeth
+
+This product includes software developed by the lx-music-desktop project
+(https://github.com/lyswhut/lx-music-desktop), licensed under the Apache License 2.0:
+
+  - src/main/lx/utils/musicSdk/   online music SDK (search, song lists, leaderboards, lyrics, covers),
+                                   copied with small import-path changes; bd/xm/test sources removed
+  - src/main/lx/common/lyricUtils/ lyric decoding helpers
+  - src/preload/userApi.js         custom source script runtime, adapted from
+                                   src/main/modules/userApi/renderer/preload.js
+
+The full license text is in src/main/lx/LICENSE-lx-music.

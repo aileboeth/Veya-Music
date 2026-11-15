@@ -1,0 +1,79 @@
+{
+  "name": "veya-music",
+  "productName": "Veya Music",
+  "version": "0.1.1",
+  "description": "Veya Music - 带智能推荐的多平台音乐播放器",
+  "main": "./out/main/index.js",
+  "author": "aileboeth",
+  "license": "Apache-2.0",
+  "homepage": "https://github.com/aileboeth/Veya-Music",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aileboeth/Veya-Music.git"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "pack": "electron-vite build && electron-builder --win --dir --publish never",
+    "dist": "electron-vite build && electron-builder --win --publish never"
+  },
+  "build": {
+    "appId": "com.aileboeth.veyamusic",
+    "productName": "Veya Music",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "out/**/*",
+      "resources/**/*"
+    ],
+    "win": {
+      "icon": "build/icon.ico",
+      "target": [
+        "nsis"
+      ],
+      "artifactName": "Veya-Music-Setup-${version}.${ext}",
+      "verifyUpdateCodeSignature": false,
+      "signtoolOptions": {
+        "sign": "./tools/sign.cjs",
+        "signingHashAlgorithms": [
+          "sha256"
+        ]
+      }
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "shortcutName": "Veya Music"
+    },
+    "electronDownload": {
+      "mirror": "https://npmmirror.com/mirrors/electron/"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "aileboeth",
+        "repo": "Veya-Music",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.11",
+    "electron": "^45.3.2",
+    "electron-builder": "^26.18.0",
+    "electron-vite": "^6.0.0",
+    "png-to-ico": "^3.0.2",
+    "sharp": "^0.35.5",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vue": "^3.5.45"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0",
+    "electron-updater": "^6.8.11",
+    "needle": "^3.5.0",
+    "tunnel": "^0.0.6"
+  }
+}

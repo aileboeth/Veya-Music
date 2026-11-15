@@ -1,0 +1,97 @@
+// 我的歌单
+import { computed, markRaw, reactive, watch } from 'vue'
+import { api, type Song } from './api'
+import { toast } from './ui'
+
+export interface MyList {
+  id: string
+  name: string
+  songs: Song[]
+  /** 从在线歌单收藏而来时记录来源，用于「同步更新」 */
+  source?: string
+  sourceListId?: string
+  createdAt?: number
+}
+
+export const lists = reactive<MyList[]>([])
+let loaded = false
+
+export const loveList = computed(() => lists.find(l => l.id == 'love')!)
+const loveIds = computed(() => new Set(loveList.value?.songs.map(s => s.id)))
+export const isLoved = (song: Song | null | undefined) => !!song && loveIds.value.has(song.id)
+
+const raw = (songs: Song[]) => songs.map(s => markRaw({ ...s, _reason: undefined, _playedAt: undefined }))
+
+export const initLists = async() => {
+  const saved = await api<MyList[]>('data.load', 'lists', [])
+  lists.splice(0, lists.length, ...(saved ?? []).map(l => ({ ...l, songs: raw(l.songs ?? []) })))
+  if (!lists.some(l => l.id == 'love')) lists.unshift({ id: 'love', name: '我喜欢', songs: [], createdAt: Date.now() })
+  loaded = true
+  watch(lists, () => { if (loaded) void api('data.save', 'lists', lists) }, { deep: true })
+}
+
+export const getList = (id: string) => lists.find(l => l.id == id)
+
+export const createList = (name: string, songs: Song[] = [], extra: Partial<MyList> = {}) => {
+  const list: MyList = { id: `list_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, name: name.trim().slice(0, 60) || '新建歌单', songs: raw(songs), createdAt: Date.now(), ...extra }
+  lists.push(list)
+  return lists[lists.length - 1]
+}
+
+export const removeList = (id: string) => {
+  if (id == 'love') return
+  const i = lists.findIndex(l => l.id == id)
+  if (i > -1) lists.splice(i, 1)
+}
+
+/** 添加歌曲（自动去重），返回实际新增的数量 */
+export const addSongs = (listId: string, songs: Song[], toTop = false) => {
+  const list = getList(listId)
+  if (!list) return 0
+  const ids = new Set(list.songs.map(s => s.id))
+  const fresh = raw(songs.filter(s => {
+    if (ids.has(s.id)) return false
+    ids.add(s.id)
+    return true
+  }))
+  if (!fresh.length) return 0
+  if (toTop) list.songs.unshift(...fresh)
+  else list.songs.push(...fresh)
+  return fresh.length
+}
+
+export const removeSongs = (listId: string, ids: string[]) => {
+  const list = getList(listId)
+  if (!list) return
+  const set = new Set(ids)
+  list.songs = list.songs.filter(s => !set.has(s.id))
+}
+
+export const toggleLove = (song: Song) => {
+  if (isLoved(song)) {
+    removeSongs('love', [song.id])
+    toast('已取消喜欢')
+  } else {
+    addSongs('love', [song], true)
+    toast('已添加到「我喜欢」', 'success')
+  }
+}
+
+/** 导入一批列表（LX 迁移 / 文件导入），同名列表合并 */
+export const importLists = (imported: Array<{ id: string, name: string, source?: string, sourceListId?: string, songs: Song[] }>) => {
+  let listCount = 0
+  let songCount = 0
+  for (const item of imported) {
+    if (!item.songs?.length) continue
+    let target: MyList | undefined
+    if (item.id == 'love') target = loveList.value
+    else target = lists.find(l => l.id != 'love' && ((item.sourceListId && l.sourceListId == item.sourceListId && l.source == item.source) || l.name == item.name))
+    if (target) songCount += addSongs(target.id, item.songs)
+    else {
+      createList(item.name, item.songs, { source: item.source, sourceListId: item.sourceListId })
+      songCount += item.songs.length
+    }
+    listCount++
+  }
+  return { listCount, songCount }
+}
