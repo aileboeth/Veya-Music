@@ -70,6 +70,17 @@ const parseMeta = (script: string, fallbackName: string) => {
   }
 }
 
+/** 比较脚本版本号（v3.2.15 / 1.7.17 / 7 这类）；有一边解析不出数字时返回 0 */
+const compareVersion = (a: string, b: string) => {
+  const pa = (a.match(/\d+/g) ?? []).map(Number)
+  const pb = (b.match(/\d+/g) ?? []).map(Number)
+  if (!pa.length || !pb.length) return 0
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    if ((pa[i] ?? 0) != (pb[i] ?? 0)) return (pa[i] ?? 0) - (pb[i] ?? 0)
+  }
+  return 0
+}
+
 export const importScript = (script: string, fileName = '') => {
   if (script.length > 9_000_000) throw new Error('脚本文件过大')
   // 很多音源脚本经过混淆，无法靠文本特征判断；是否可用以初始化结果为准
@@ -79,7 +90,10 @@ export const importScript = (script: string, fileName = '') => {
   const meta = parseMeta(script, fileName.replace(/\.js$/i, '') || '未命名音源')
   const exist = list.find(m => m.id == hash || m.name == meta.name)
   if (exist) {
-    // 同名脚本视为更新
+    // 同名脚本视为更新；但不让旧版本覆盖掉已有的新版本（整个文件夹导入时常见）
+    if (exist.id != hash && fs.existsSync(scriptPath(exist.id)) && compareVersion(meta.version, exist.version) < 0) {
+      throw new Error(`已经有更新的版本 ${exist.version}，跳过了 ${meta.version}`)
+    }
     void unload(exist.id)
     fs.writeFileSync(scriptPath(exist.id), script)
     Object.assign(exist, meta, { sources: undefined, updateAlert: undefined })
@@ -249,9 +263,55 @@ export const initUserApi = () => {
     const list = getList()
     const item = list.find(m => m.id == found.id)
     if (!item) return
+    const isNew = item.updateAlert?.log != String(data.log ?? '')
     item.updateAlert = { log: String(data.log ?? ''), updateUrl: data.updateUrl }
     saveList(list)
+    // 同一条提示只提醒一次
+    if (isNew) onUpdateAlert(item.name)
   })
+}
+
+let onUpdateAlert: (name: string) => void = () => {}
+export const setOnUpdateAlert = (fn: (name: string) => void) => { onUpdateAlert = fn }
+
+/** 把所有启用的音源都启动一遍：脚本在启动时会自己检查新版本并上报（和 LX 的「音源更新提示」同一机制） */
+let checking: Promise<void> | null = null
+export const checkUpdates = () => {
+  checking ??= (async() => {
+    const ids = getList().filter(m => m.enabled).map(m => m.id)
+    let i = 0
+    await Promise.all(Array.from({ length: 3 }, async() => {
+      while (i < ids.length) await ensure(ids[i++]).catch(() => {})
+    }))
+    // 更新提示通常在初始化之后才发出，稍等一下
+    await new Promise(resolve => setTimeout(resolve, 6000))
+  })().finally(() => { checking = null })
+  return checking
+}
+
+/**
+ * 按脚本给出的更新地址更新：地址直接返回新脚本时就地替换；返回的是网页时交给调用方用浏览器打开
+ */
+export const updateFromUrl = async(id: string): Promise<{ updated: boolean, version?: string, url?: string }> => {
+  const item = getList().find(m => m.id == id)
+  const url = item?.updateAlert?.updateUrl
+  if (!item || !url || !/^https?:\/\//.test(url)) throw new Error('这个音源没有提供更新地址')
+  let text = ''
+  try {
+    const res = await session.defaultSession.fetch(url, { signal: AbortSignal.timeout(20_000) })
+    if (res.ok && !/text\/html/i.test(res.headers.get('content-type') ?? '')) text = await res.text()
+  } catch {}
+  const head = text.slice(0, 2000)
+  if (!text || text.length > 9_000_000 || /^\s*</.test(head) || !/@name\s+\S/.test(head)) return { updated: false, url }
+  const meta = parseMeta(text, '')
+  if (meta.name != item.name) return { updated: false, url }
+  let current = ''
+  try { current = fs.readFileSync(scriptPath(item.id), 'utf8') } catch {}
+  if (current.trim() == text.trim()) throw new Error('更新地址给出的脚本和现在用的完全一样，作者可能还没放出新版本')
+  const next = importScript(text)
+  const err = await ensure(next.id)
+  if (err) throw new Error(`新版本 ${next.version} 已导入，但初始化失败：${err}`)
+  return { updated: true, version: next.version }
 }
 
 /** 预热首选音源，减少第一首歌的等待 */

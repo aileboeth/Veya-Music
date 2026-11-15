@@ -228,6 +228,9 @@ const api: Record<string, (...args: any[]) => any> = {
   'source.list': music.sourceList,
   'source.speedTest': music.speedTest,
   'source.speedState': music.getSpeedState,
+  'source.disableDead': music.disableDeadSources,
+  'source.checkUpdates': userApi.checkUpdates,
+  'source.update': userApi.updateFromUrl,
   'source.pick': async() => {
     const r = await dialog.showOpenDialog(mainWin!, { title: '选择音源脚本', filters: [{ name: '音源脚本', extensions: ['js'] }], properties: ['openFile', 'multiSelections'] })
     return r.canceled ? { ok: [], failed: [] } : importSourceFiles(r.filePaths)
@@ -377,6 +380,9 @@ if (!app.requestSingleInstanceLock()) {
     createTray()
     updater.initUpdater(state => sendMain('update:state', state), () => { quitting = true })
     setTimeout(() => userApi.warmup(), 1500)
+    // 启动后把音源都跑一遍，收集脚本自己上报的「有新版本」提示
+    userApi.setOnUpdateAlert(name => sendMain('app:toast', '音源「' + name + '」提示有新版本，可以到 设置 → 音源管理 里更新', 'success'))
+    setTimeout(() => void userApi.checkUpdates(), 20_000)
     if (isDev && !process.env.VEYA_DEV_SCRIPT) mainWin?.webContents.openDevTools({ mode: 'detach' })
     runDevScript()
   })

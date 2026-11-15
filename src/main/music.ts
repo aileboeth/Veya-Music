@@ -420,3 +420,16 @@ export const speedTest = async() => {
   }
   return sourceList()
 }
+
+/** 停用上次测速里所有平台都失败的音源，返回被停用的名字 */
+export const disableDeadSources = async() => {
+  const results = speedData().results
+  const names: string[] = []
+  for (const m of userApi.getList()) {
+    const cells = Object.values(results[m.id] ?? {})
+    if (!m.enabled || !cells.length || cells.some(c => c.ok)) continue
+    await userApi.setEnabled(m.id, false)
+    names.push(m.name)
+  }
+  return names
+}

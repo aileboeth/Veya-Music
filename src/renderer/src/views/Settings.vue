@@ -87,6 +87,45 @@ const speedCells = (s: any) => SOURCES.filter(x => s.speed?.[x.id]).map(x => {
     title: c.ok ? `取链接 ${c.ms} 毫秒 · 下载速度约 ${c.kbps >= 1024 ? (c.kbps / 1024).toFixed(1) + ' MB/s' : c.kbps + ' KB/s'}` : c.err,
   }
 })
+/** 启用着、但上次测速所有平台都失败的音源数量 */
+const deadCount = () => sources.value.filter(s => s.enabled && s.speed && Object.keys(s.speed).length && !Object.values<any>(s.speed).some(c => c.ok)).length
+const disableDead = async() => {
+  const names = await api<string[]>('source.disableDead')
+  if (names.length) toast(`已停用：${names.join('、')}（没有删除，随时可以重新打开）`, 'success', 5000)
+}
+
+// ---------- 音源更新 ----------
+const checkingUpdates = ref(false)
+const updating = ref('')
+const checkSourceUpdates = async() => {
+  checkingUpdates.value = true
+  try {
+    await api('source.checkUpdates')
+    const n = (await api<any[]>('source.list')).filter(s => s.enabled && s.updateAlert).length
+    toast(n ? `有 ${n} 个音源提示有新版本，见下面列表里的橙色提示` : '启用的音源都没有提示新版本（是否提示由音源脚本自己决定）', n ? 'success' : 'info', 5000)
+  } catch (err: any) {
+    toast(`检查失败：${err.message}`, 'error')
+  } finally {
+    checkingUpdates.value = false
+  }
+}
+const updateSource = async(s: any) => {
+  if (!await confirmDialog(`更新音源「${s.name}」？`, `${s.updateAlert.log}\n\n会从音源作者提供的地址下载新脚本并替换现在的版本：\n${s.updateAlert.updateUrl}\n\n如果这个地址是个网页而不是脚本，会改为用浏览器打开，你下载后再点「导入音源脚本」即可（同名的会自动替换）。`, { okText: '更新' })) return
+  updating.value = s.id
+  try {
+    const r = await api<{ updated: boolean, version?: string, url?: string }>('source.update', s.id)
+    if (r.updated) toast(`「${s.name}」已更新到 ${r.version}`, 'success', 4000)
+    else {
+      void api('app.open', r.url)
+      toast('这个音源的更新地址是网页，已用浏览器打开；下载新脚本后回来导入即可', 'info', 6000)
+    }
+  } catch (err: any) {
+    toast(`更新失败：${err.message}`, 'error', 5000)
+  } finally {
+    updating.value = ''
+  }
+}
+
 const speedTime = () => speed.t ? new Date(speed.t).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
 
 // ---------- 网络 ----------
@@ -143,12 +182,16 @@ const setLyric = (patch: Record<string, any>) => void api('lyric.setConf', patch
     <section>
       <h2>音源管理</h2>
       <p class="hint">Veya Music 兼容 LX Music 的自定义音源脚本（.js）。一个音源失败了会自动换下一个，全部失败再自动换到其他平台的同一首歌。点「测速」可以看每个音源在各平台取链接要多久。</p>
-      <div class="row gap8" style="margin-bottom: 12px">
+      <div class="row gap8" style="margin-bottom: 12px; flex-wrap: wrap">
         <button class="btn primary" @click="pickFiles"><Icon name="plus" :size="16" />导入音源脚本</button>
         <button class="btn" @click="pickFolder"><Icon name="folder" :size="16" />导入整个文件夹</button>
         <button class="btn" :disabled="speed.running || !sources.some(s => s.enabled)" @click="runSpeedTest">
           <span v-if="speed.running" class="spinner mini" /><Icon v-else name="sparkle" :size="16" />{{ speed.running ? `测速中 ${speed.done}/${speed.total}` : '测速' }}
         </button>
+        <button class="btn" :disabled="checkingUpdates || !sources.some(s => s.enabled)" @click="checkSourceUpdates">
+          <span v-if="checkingUpdates" class="spinner mini" /><Icon v-else name="refresh" :size="16" />{{ checkingUpdates ? '检查中…' : '检查音源更新' }}
+        </button>
+        <button v-if="deadCount() && !speed.running" class="btn danger" @click="disableDead">停用 {{ deadCount() }} 个失效音源</button>
         <span v-if="speedTime() && !speed.running" class="dim speed-time">上次测速：{{ speedTime() }}</span>
       </div>
       <div class="item">
@@ -170,7 +213,10 @@ const setLyric = (patch: Record<string, any>) => void api('lyric.setConf', patch
             <span v-if="s.author">作者：{{ s.author }}</span>
           </div>
           <div v-if="speedCells(s).length" class="s-speed"><span v-for="c in speedCells(s)" :key="c.id" :class="c.cls" :title="c.title">{{ c.text }}</span></div>
-          <div v-if="s.updateAlert" class="s-update ellipsis" :title="s.updateAlert.log">脚本提示有更新：{{ s.updateAlert.log }}</div>
+          <div v-if="s.updateAlert" class="s-update">
+            <span class="ellipsis" :title="s.updateAlert.log">有新版本：{{ s.updateAlert.log }}</span>
+            <button v-if="s.updateAlert.updateUrl" class="btn small" :disabled="updating == s.id" @click="updateSource(s)">{{ updating == s.id ? '更新中…' : '更新' }}</button>
+          </div>
         </div>
         <button class="icon-btn" title="上移（优先使用）" :disabled="i == 0" @click="move(i, -1)"><Icon name="up" :size="16" /></button>
         <button class="icon-btn" title="下移" :disabled="i == sources.length - 1" @click="move(i, 1)"><Icon name="arrow-down" :size="16" /></button>
@@ -360,7 +406,8 @@ h2 { font-size: 17px; margin: 0 0 12px; }
 .source.loading .st i { background: #f5b301; }
 .source.failed .st { color: var(--danger); } .source.failed .st i { background: var(--danger); }
 .err { color: var(--danger); overflow: hidden; text-overflow: ellipsis; }
-.s-update { font-size: 12px; color: #c77d00; margin-top: 3px; }
+.s-update { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #c77d00; margin-top: 6px; }
+.s-update .btn { height: 24px; flex: none; }
 .about a { text-decoration: underline; }
 .speed-time { font-size: 12px; margin-left: 4px; }
 .spinner.mini { width: 14px; height: 14px; border-width: 2px; }

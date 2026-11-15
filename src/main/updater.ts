@@ -36,6 +36,34 @@ const notesText = (notes: any) => {
     .split('\n').map(l => l.trim()).filter(Boolean).join('\n').slice(0, 3000)
 }
 
+// 新版本的中文更新内容：直接读仓库里的 changelog.json（和客户端内置的更新日志是同一个文件），
+// 这样不依赖 GitHub Release 页面上填了什么；读不到时才退回 Release 的说明
+const repoNotes = new Map<string, string>()
+const CHANGELOG_PATH = 'src/renderer/src/changelog.json'
+const loadRepoNotes = async(version: string, overrideUrl?: string) => {
+  if (repoNotes.has(version) || overrideUrl === '') return
+  const urls = overrideUrl ? [overrideUrl] : [
+    `https://raw.githubusercontent.com/aileboeth/Veya-Music/v${version}/${CHANGELOG_PATH}`,
+    `https://cdn.jsdelivr.net/gh/aileboeth/Veya-Music@v${version}/${CHANGELOG_PATH}`,
+    `https://raw.githubusercontent.com/aileboeth/Veya-Music/main/${CHANGELOG_PATH}`,
+  ]
+  for (const url of urls) {
+    try {
+      const res = await autoUpdater.netSession.fetch(url, { signal: AbortSignal.timeout(12_000) })
+      if (!res.ok) continue
+      const entry = (await res.json() as any[]).find(c => c?.version == version)
+      const notes = (entry?.items ?? []).map((i: any) => `· ${String(i)}`).join('\n').slice(0, 3000)
+      if (!notes) continue
+      repoNotes.set(version, notes)
+      if (state.version == version && ['available', 'downloading', 'downloaded'].includes(state.status)) {
+        if (state.status == 'downloaded') save('updateNotes', { version, notes }, true)
+        set({ notes })
+      }
+      return
+    } catch {}
+  }
+}
+
 const friendlyError = (err: any) => {
   const msg = String(err?.message ?? err)
   if (/net::|ENOTFOUND|ETIMEDOUT|ECONNRESET|ECONNREFUSED|timeout|socket/i.test(msg)) return '连接 GitHub 失败，请检查网络或代理后重试'
@@ -71,11 +99,14 @@ export const initUpdater = (onState: (s: UpdateState) => void, onBeforeInstall: 
   autoUpdater.logger = null
 
   autoUpdater.on('checking-for-update', () => set({ status: 'checking', message: '' }))
-  autoUpdater.on('update-available', info => set({ status: 'available', version: info.version, notes: notesText(info.releaseNotes), percent: 0 }))
+  autoUpdater.on('update-available', info => {
+    set({ status: 'available', version: info.version, notes: repoNotes.get(info.version) || notesText(info.releaseNotes), percent: 0 })
+    void loadRepoNotes(info.version, devUrl ? (process.env.VEYA_CHANGELOG_URL ?? '') : undefined)
+  })
   autoUpdater.on('update-not-available', () => set({ status: 'none', message: '' }))
   autoUpdater.on('download-progress', p => set({ status: 'downloading', percent: Math.round(p.percent) }))
   autoUpdater.on('update-downloaded', info => {
-    const notes = notesText(info.releaseNotes)
+    const notes = repoNotes.get(info.version) || notesText(info.releaseNotes)
     // 存下来：装完重启后还能显示这次更新了什么
     if (notes) save('updateNotes', { version: info.version, notes }, true)
     set({ status: 'downloaded', version: info.version, notes, percent: 100 })
