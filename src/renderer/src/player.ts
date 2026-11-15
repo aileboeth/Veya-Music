@@ -32,7 +32,7 @@ const audio = new Audio()
 audio.preload = 'auto'
 let token = 0
 let failCount = 0
-let retried = false
+let errorRetries = 0
 let started = false
 let listened = 0
 let lastTick = 0
@@ -151,7 +151,7 @@ const loadSong = async(song: Song, autoplay = true, startAt = 0, refresh = false
   if (!refresh) {
     started = false
     listened = 0
-    retried = false
+    errorRetries = 0
   }
   audio.pause()
   audio.removeAttribute('src')
@@ -254,10 +254,16 @@ audio.addEventListener('ended', () => {
 })
 audio.addEventListener('error', () => {
   if (!audio.src || !player.song) return
-  // 链接可能过期：强制刷新一次再试
-  if (!retried) {
-    retried = true
-    void loadSong(player.song, true, player.time > 3 ? player.time : 0, true)
+  // 链接过期或这个音源给的文件放不了：换别的音源重新取链接，最多换 3 次
+  if (errorRetries < 3) {
+    errorRetries++
+    const info: any = player.info
+    const song = player.song
+    if (info?.scriptId) {
+      void api('music.playFail', info.song ?? song, info.scriptId).catch(() => {})
+      mismatchScripts.push(`${info.scriptId}|${(info.song ?? song).id}`)
+    }
+    void loadSong(song, true, player.time > 3 ? player.time : 0, true, true)
     return
   }
   onPlayFail('音频加载失败')

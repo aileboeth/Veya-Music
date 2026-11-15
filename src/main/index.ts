@@ -225,6 +225,7 @@ const api: Record<string, (...args: any[]) => any> = {
   'music.pic': music.getPic,
   'music.others': music.findOtherSources,
   'music.mismatch': music.reportMismatch,
+  'music.playFail': music.reportPlayFail,
 
   'source.list': music.sourceList,
   'source.speedTest': music.speedTest,

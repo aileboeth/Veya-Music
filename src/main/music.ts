@@ -249,6 +249,52 @@ const pickQualitys = (song: any, preferred: string, supported: string[] | undefi
   return list
 }
 
+/** 看文件开头是不是播放器认识的音频格式（有的音源会给 .mgg / .mflac 这类加密文件，或者把报错 JSON 当成音频返回） */
+const looksLikeAudio = (head: Uint8Array, contentType: string) => {
+  const b = Buffer.from(head)
+  if (b.length < 12) return false
+  const tag = b.toString('latin1', 0, 4)
+  if (tag.startsWith('ID3') || ['fLaC', 'OggS', 'RIFF', 'FORM'].includes(tag)) return true
+  if (b.toString('latin1', 4, 8) == 'ftyp') return true
+  if (b[0] == 0x1a && b[1] == 0x45 && b[2] == 0xdf && b[3] == 0xa3) return true // webm / mkv
+  if (b[0] == 0xff && (b[1] & 0xe0) == 0xe0) return true // mp3 / aac 帧头
+  // 其他少见格式：服务器明确说是音频、内容又不是文本，就放行
+  return /^(audio|video)\//i.test(contentType) && !/^\s*[{[<]/.test(b.toString('latin1', 0, 16))
+}
+
+/** 取到链接后先读开头一点，确认播放器真的能放（和播放器走同一个网络通道），不行就抛错让上层换下一个音源 */
+const checkPlayable = async(url: string) => {
+  const ctrl = new AbortController()
+  const timer = setTimeout(() => ctrl.abort(), 6000)
+  try {
+    const res = await session.defaultSession.fetch(url, { headers: { Range: 'bytes=0-4095' }, signal: ctrl.signal })
+    if (!res.ok) throw new Error(`链接打不开（${res.status}）`)
+    const reader = res.body!.getReader()
+    let head = Buffer.alloc(0)
+    while (head.length < 12) {
+      const { done, value } = await reader.read()
+      if (done) break
+      head = Buffer.concat([head, Buffer.from(value)])
+    }
+    if (!looksLikeAudio(head, res.headers.get('content-type') ?? '')) throw new Error('链接不是能直接播放的音频（可能是加密格式）')
+  } catch (err: any) {
+    throw new Error(err?.name == 'AbortError' ? '链接连接超时' : (err?.message ?? String(err)))
+  } finally {
+    clearTimeout(timer)
+    ctrl.abort()
+  }
+}
+
+/** 播放器加载音频失败时上报：降低这个脚本在该平台的优先级 */
+export const reportPlayFail = (song: any, scriptId: string) => {
+  if (!song?.id || !scriptId) return
+  const key = `${scriptId}_${song.source}`
+  const f = failStat.get(key) ?? { n: 0, t: 0 }
+  failStat.set(key, { n: f.n + 1, t: Date.now() })
+  notePair(key, { ok: false })
+  for (const k of [...urlCache.keys()]) if (urlCache.get(k)?.v?.song?.id == song.id || k.startsWith(song.id + '_')) urlCache.delete(k)
+}
+
 interface UrlOptions { exclude?: Set<string>, onlyBad?: boolean }
 const requestUrlBySong = async(song: any, preferred: string, errors: string[], opts: UrlOptions = {}) => {
   // onlyBad：最后的兜底，只试之前被标记为「时长不符」的脚本（可能其实是歌曲信息本身不准）
@@ -271,6 +317,7 @@ const requestUrlBySong = async(song: any, preferred: string, errors: string[], o
         const r = await userApi.request(meta.id, { source: song.source, action: 'musicUrl', info: { type: quality, musicInfo: info } }, 15_000)
         const url = r?.data?.url
         if (!url) throw new Error('未返回链接')
+        await checkPlayable(url)
         failStat.delete(key)
         notePair(key, { ok: true, ms: Date.now() - t0 })
         return { url: url as string, quality, scriptId: meta.id, scriptName: meta.name, unverified: !!opts.onlyBad }
@@ -350,13 +397,16 @@ const probeUrl = async(url: string) => {
   if (!res.ok) throw new Error(`链接返回 ${res.status}`)
   if (/text\/|json|xml/i.test(res.headers.get('content-type') ?? '')) throw new Error('链接不是音频文件')
   let bytes = 0
+  let head = Buffer.alloc(0)
   const reader = res.body!.getReader()
   while (bytes < PROBE_BYTES) {
     const { done, value } = await reader.read()
     if (done) break
+    if (head.length < 12) head = Buffer.concat([head, Buffer.from(value)])
     bytes += value.length
   }
   void reader.cancel().catch(() => {})
+  if (!looksLikeAudio(head, res.headers.get('content-type') ?? '')) throw new Error('链接不是能直接播放的音频（可能是加密格式）')
   if (bytes < 30_000) throw new Error('链接内容无效')
   return Math.round(bytes / 1024 / Math.max(0.05, (Date.now() - t0) / 1000))
 }
