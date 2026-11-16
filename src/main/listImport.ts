@@ -4,6 +4,7 @@
 // - 其他 App：粘贴「歌名 - 歌手」的文本（每行一首），同样逐首匹配
 import { session } from 'electron'
 import { normSongs, rawSdk, songListDetail } from './music'
+import { fetchPlaylist, isTrackId, type QishuiTrack } from './qishui'
 
 export interface ImportProgress { stage: 'fetch' | 'match', done: number, total: number, name?: string }
 export interface ImportedPlaylist {
@@ -18,6 +19,8 @@ export interface ImportedPlaylist {
   total: number
   /** 没有匹配到的歌（仅汽水音乐 / 文本导入） */
   missing: string[]
+  /** 汽水歌单里其他平台都没有、保留为汽水音源的歌有几首 */
+  qsOnly?: number
 }
 
 const PLATFORMS: Record<string, string> = { wy: '网易云音乐', tx: 'QQ 音乐', kg: '酷狗音乐', kw: '酷我音乐', mg: '咪咕音乐', qs: '汽水音乐', text: '文本歌单' }
@@ -70,13 +73,6 @@ const normalizeId = (platform: string, url: string) => {
 // ---------- 文本歌单 ----------
 interface PlainSong { name: string, singer: string, albumName: string, interval: string }
 
-const fmtTime = (sec: number) => {
-  if (!sec || !Number.isFinite(sec)) return ''
-  const m = Math.floor(sec / 60)
-  const s = Math.round(sec % 60)
-  return `${m < 10 ? '0' : ''}${m}:${s < 10 ? '0' : ''}${s}`
-}
-
 /** 每行一首：「歌名 - 歌手」（也接受 歌名 – 歌手 / 歌名 — 歌手 / 歌名<Tab>歌手 / 只有歌名），行首的序号会去掉 */
 export const parseTextList = (text: string): PlainSong[] => {
   const out: PlainSong[] = []
@@ -94,53 +90,6 @@ export const parseTextList = (text: string): PlainSong[] => {
     out.push({ name, singer, albumName: '', interval: '' })
   }
   return out
-}
-
-// ---------- 汽水音乐 ----------
-const MOBILE_UA = 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1'
-
-/** 取出页面里 `_ROUTER_DATA = {...}` 的 JSON（按括号配对截取，后面可能还跟着别的脚本） */
-const routerData = (html: string) => {
-  const i = html.indexOf('_ROUTER_DATA')
-  const start = i < 0 ? -1 : html.indexOf('{', i)
-  if (start < 0) return null
-  let depth = 0
-  let inStr = false
-  let esc = false
-  for (let p = start; p < html.length; p++) {
-    const ch = html[p]
-    if (inStr) {
-      if (esc) esc = false
-      else if (ch == '\\') esc = true
-      else if (ch == '"') inStr = false
-    } else if (ch == '"') inStr = true
-    else if (ch == '{') depth++
-    else if (ch == '}' && --depth == 0) {
-      try { return JSON.parse(html.slice(start, p + 1)) } catch { return null }
-    }
-  }
-  return null
-}
-
-export const fetchQishui = async(url: string) => {
-  const res = await session.defaultSession.fetch(url, { headers: { 'User-Agent': MOBILE_UA }, signal: AbortSignal.timeout(25_000) })
-  if (!res.ok) throw new Error(`汽水音乐分享页打不开（HTTP ${res.status}）`)
-  const page = routerData(await res.text())?.loaderData?.playlist_page
-  const medias: any[] = page?.medias ?? []
-  if (!medias.length) throw new Error('没有从这个汽水音乐链接里读到歌曲。请确认分享的是「歌单」，并且歌单是公开的')
-  const songs: PlainSong[] = []
-  for (const m of medias) {
-    const t = m?.entity?.track
-    if (!t?.name) continue
-    songs.push({
-      name: String(t.name),
-      singer: (t.artists ?? []).map((a: any) => a?.name).filter(Boolean).join('、'),
-      albumName: String(t.album?.name ?? ''),
-      interval: fmtTime(Number(t.duration) / 1000),
-    })
-  }
-  const info = page.playlistInfo ?? {}
-  return { name: String(info.title || info.public_title || '汽水音乐歌单'), total: Number(info.count_tracks) || songs.length, songs }
 }
 
 // ---------- 逐首匹配到内置平台 ----------
@@ -166,7 +115,12 @@ const findOne = async(song: PlainSong): Promise<any | null> => {
   return null
 }
 
-const matchAll = async(songs: PlainSong[], onProgress: (p: ImportProgress) => void) => {
+/** 其他平台都没有的汽水歌曲：保留汽水自己的 ID，播放时走支持汽水的音源 */
+const qsSong = (t: QishuiTrack) => ({
+  source: 'qs', songmid: t.id, vid: t.vid, name: t.name, singer: t.singer, albumName: t.albumName, interval: t.interval, img: t.img || null, types: [], _types: {},
+})
+
+const matchAll = async(songs: Array<PlainSong & Partial<QishuiTrack>>, onProgress: (p: ImportProgress) => void) => {
   const job = ++jobId
   const found: Array<any | null> = new Array(songs.length).fill(null)
   let next = 0
@@ -181,8 +135,14 @@ const matchAll = async(songs: PlainSong[], onProgress: (p: ImportProgress) => vo
   }
   await Promise.all(Array.from({ length: 4 }, worker))
   if (job != jobId) throw new Error('已取消导入')
+  let qsOnly = 0
+  songs.forEach((s, i) => {
+    if (found[i] || !s.id || !isTrackId(s.id)) return
+    found[i] = qsSong(s as QishuiTrack)
+    qsOnly++
+  })
   const missing = songs.filter((_, i) => !found[i]).map(s => s.singer ? `${s.name} - ${s.singer}` : s.name)
-  return { songs: normSongs(found.filter(Boolean)), missing }
+  return { songs: normSongs(found.filter(Boolean)), missing, qsOnly }
 }
 
 export const importPlaylist = async(input: string, hint = '', onProgress: (p: ImportProgress) => void = () => {}): Promise<ImportedPlaylist> => {
@@ -197,9 +157,9 @@ export const importPlaylist = async(input: string, hint = '', onProgress: (p: Im
     return { ...base, name: '导入的歌单', songs: r.songs, total: plain.length, missing: r.missing }
   }
   if (d.platform == 'qs') {
-    const list = await fetchQishui(d.url)
+    const list = await fetchPlaylist(d.url)
     const r = await matchAll(list.songs, onProgress)
-    return { ...base, name: list.name, songs: r.songs, total: list.songs.length, missing: r.missing }
+    return { ...base, name: list.name, songs: r.songs, total: list.songs.length, missing: r.missing, qsOnly: r.qsOnly }
   }
 
   const job = ++jobId

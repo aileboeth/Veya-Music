@@ -305,6 +305,19 @@ export const checkUpdates = () => {
   return checking
 }
 
+/** 把所有启用的音源都初始化一遍，刷新它们上报的「支持哪些平台」（升级后第一次播放汽水歌曲时用） */
+let ensuring: Promise<void> | null = null
+export const ensureAll = () => {
+  ensuring ??= (async() => {
+    const ids = getList().filter(m => m.enabled).map(m => m.id)
+    let i = 0
+    await Promise.all(Array.from({ length: 4 }, async() => {
+      while (i < ids.length) await ensure(ids[i++], true).catch(() => {})
+    }))
+  })().finally(() => { ensuring = null })
+  return ensuring
+}
+
 /**
  * 按脚本给出的更新地址更新：地址直接返回新脚本时就地替换；返回的是网页时交给调用方用浏览器打开
  */

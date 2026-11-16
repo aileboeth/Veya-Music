@@ -196,6 +196,9 @@ const save = () => {
           <template v-else-if="exist">这个歌单之前导入过，下面是这次<b>新增的 {{ rows.length }} 首</b>。</template>
           <template v-else>共读取到 <b>{{ rows.length }}</b> 首。</template>
           把不想要的歌取消勾选，再点保存；点歌名前的 ▶ 可以先试听。
+          <template v-if="result.qsOnly">
+            其中 {{ result.qsOnly }} 首其他平台没有，保留为「汽水」音源（能播放的音源比较少，偶尔可能放不了）。
+          </template>
           <template v-if="result.missing.length">
             另有 {{ result.missing.length }} 首没有找到，<a class="link" @click="showMissing = !showMissing">{{ showMissing ? '收起' : '查看' }}</a>。
           </template>

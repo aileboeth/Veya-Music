@@ -190,7 +190,8 @@ export const similarSongs = async(song: any): Promise<any[]> => {
   try {
     const singer = mainSinger(song)
     if (!singer) return []
-    const r = await searchMusic(song.source, singer, 1, 30)
+    // 汽水没有搜索接口，用酷我找同歌手的歌
+    const r = await searchMusic(song.source == 'qs' ? 'kw' : song.source, singer, 1, 30)
     return r.list.filter((s: any) => s.id != song.id)
   } catch { return [] }
 }

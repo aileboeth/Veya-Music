@@ -43,7 +43,9 @@ export const SOURCES = [
   { id: 'wy', name: '网易' },
   { id: 'mg', name: '咪咕' },
 ]
-export const sourceName = (id: string) => SOURCES.find(s => s.id == id)?.name ?? id
+/** 不能搜索、只在导入的歌单里出现的平台 */
+const EXTRA_SOURCES: Record<string, string> = { qs: '汽水' }
+export const sourceName = (id: string) => SOURCES.find(s => s.id == id)?.name ?? EXTRA_SOURCES[id] ?? id
 
 export const QUALITYS = [
   { id: '128k', name: '标准', desc: '128k' },
@@ -70,6 +72,7 @@ export const thumb = (url: string | null | undefined, size = 120) => {
   if (!url) return ''
   if (url.includes('music.126.net') && !url.includes('?')) return `${url}?param=${size}y${size}`
   if (url.includes('y.gtimg.cn/music/photo_new') && size <= 300) return url.replace(/R\d+x\d+M/, 'R300x300M')
+  if (url.includes('douyinpic.com')) return url.replace(/~c5_\d+x\d+\./, `~c5_${size <= 150 ? '150x150' : size <= 375 ? '375x375' : '500x500'}.`)
   if (url.includes('{size}')) return url.replace('{size}', String(size <= 150 ? 150 : 480))
   return url
 }

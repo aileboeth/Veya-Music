@@ -20,13 +20,15 @@ const EVENT_NAMES = {
 }
 const eventNames = Object.values(EVENT_NAMES)
 const events = { request: null }
-const allSources = ['kw', 'kg', 'tx', 'wy', 'mg', 'local']
+// qs = 汽水音乐：LX 没有这个平台，部分音源脚本自己声明了它
+const allSources = ['kw', 'kg', 'tx', 'wy', 'mg', 'qs', 'local']
 const supportQualitys = {
   kw: ['128k', '320k', 'flac', 'flac24bit'],
   kg: ['128k', '320k', 'flac', 'flac24bit'],
   tx: ['128k', '320k', 'flac', 'flac24bit'],
   wy: ['128k', '320k', 'flac', 'flac24bit'],
   mg: ['128k', '320k', 'flac', 'flac24bit'],
+  qs: ['128k', '320k', 'flac', 'flac24bit'],
   local: [],
 }
 const supportActions = {
@@ -35,6 +37,7 @@ const supportActions = {
   tx: ['musicUrl'],
   wy: ['musicUrl'],
   mg: ['musicUrl'],
+  qs: ['musicUrl'],
   local: ['musicUrl', 'lyric', 'pic'],
 }
 

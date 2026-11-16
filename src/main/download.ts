@@ -55,7 +55,23 @@ const extOf = (url: string, quality: string) => {
   return quality.startsWith('flac') ? 'flac' : 'mp3'
 }
 
-const fetchToFile = (url: string, file: string, task: DownloadTask, redirects = 0): Promise<void> => new Promise((resolve, reject) => {
+const sniffExt = (file: string) => {
+  try {
+    const fd = fs.openSync(file, 'r')
+    const b = Buffer.alloc(12)
+    fs.readSync(fd, b, 0, 12, 0)
+    fs.closeSync(fd)
+    const tag = b.toString('latin1', 0, 4)
+    if (b.toString('latin1', 4, 8) == 'ftyp') return 'm4a'
+    if (tag == 'fLaC') return 'flac'
+    if (tag == 'OggS') return 'ogg'
+    if (tag == 'RIFF') return 'wav'
+    if (tag.startsWith('ID3') || (b[0] == 0xff && (b[1] & 0xe0) == 0xe0)) return 'mp3'
+  } catch {}
+  return ''
+}
+
+const fetchToFile =(url: string, file: string, task: DownloadTask, redirects = 0): Promise<void> => new Promise((resolve, reject) => {
   const req = (url.startsWith('https') ? https : http).get(url, {
     headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
     timeout: 30_000,
@@ -100,7 +116,7 @@ const runTask = async(task: DownloadTask) => {
     const info = await getMusicUrl(task.song, task.quality, { refresh: true })
     task.quality = info.quality
     const base = safeName(`${task.song.name} - ${task.song.singer}`)
-    const file = path.join(dir, `${base}.${extOf(info.url, info.quality)}`)
+    let file = path.join(dir, `${base}.${extOf(info.url, info.quality)}`)
     tmp = file + '.veyadl'
     task.filePath = file
     task.message = ''
@@ -108,6 +124,12 @@ const runTask = async(task: DownloadTask) => {
     await fetchToFile(info.url, tmp, task)
     if (task.status as string == 'canceled') throw new Error('已取消')
     if (task.downloaded < 20_000) throw new Error('下载到的文件无效')
+    // 链接里看不出格式的（比如汽水的是 m4a）：按文件开头的标记改成正确的扩展名
+    const real = /\.(mp3|flac|m4a|ogg|wav|ape|aac)(?:\?|$)/i.test(info.url) ? '' : sniffExt(tmp)
+    if (real && !file.toLowerCase().endsWith('.' + real)) {
+      file = path.join(dir, `${base}.${real}`)
+      task.filePath = file
+    }
     fs.renameSync(tmp, file)
     if (settings.downloadLyric !== false) {
       try {

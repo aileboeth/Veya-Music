@@ -6,6 +6,7 @@ import sdk from './lx/utils/musicSdk/index'
 import * as userApi from './userApi'
 import { session } from 'electron'
 import { dataDir, load, save } from './store'
+import * as qishui from './qishui'
 
 export const SOURCES = [
   { id: 'kw', name: '酷我' },
@@ -168,7 +169,10 @@ export const getLyric = async(song: any, refresh = false) => {
       if (data?.lyric) return data
     } catch {}
   }
-  const info: any = await retry(() => withTimeout(unwrap(sdk[song.source].getLyric({ ...song })), 15_000))
+  // 汽水音乐不在 LX 的接口里：歌词从它的单曲分享页读
+  const info: any = song.source == 'qs'
+    ? await qishui.trackInfo(String(song.songmid))
+    : await retry(() => withTimeout(unwrap(sdk[song.source].getLyric({ ...song })), 15_000))
   const data = { lyric: info.lyric ?? '', tlyric: info.tlyric ?? '', rlyric: info.rlyric ?? '', lxlyric: info.lxlyric ?? '' }
   if (data.lyric) fs.promises.writeFile(file, JSON.stringify(data)).catch(() => {})
   return data
@@ -176,6 +180,7 @@ export const getLyric = async(song: any, refresh = false) => {
 
 export const getPic = async(song: any) => {
   if (song.img) return song.img as string
+  if (song.source == 'qs') return (await qishui.trackInfo(String(song.songmid))).cover
   return cached(`pic_${song.id}`, 24 * 60 * MIN, async() => {
     const url = await withTimeout(unwrap(sdk[song.source].getPic({ ...song })), 10_000).catch(() => '')
     return typeof url == 'string' ? url : ''
@@ -263,12 +268,15 @@ const looksLikeAudio = (head: Uint8Array, contentType: string) => {
 }
 
 /** 取到链接后先读开头一点，确认播放器真的能放（和播放器走同一个网络通道），不行就抛错让上层换下一个音源 */
-const checkPlayable = async(url: string) => {
+const checkPlayable = async(url: string, expectSec = 0) => {
   const ctrl = new AbortController()
   const timer = setTimeout(() => ctrl.abort(), 6000)
   try {
     const res = await session.defaultSession.fetch(url, { headers: { Range: 'bytes=0-4095' }, signal: ctrl.signal })
     if (!res.ok) throw new Error(`链接打不开（${res.status}）`)
+    // 文件大小和歌曲时长差太多（每秒不到 5 KB，连最低音质都不够）= 只有试听片段
+    const total = res.status == 206 ? Number(/\/(\d+)\s*$/.exec(res.headers.get('content-range') ?? '')?.[1]) : Number(res.headers.get('content-length'))
+    if (expectSec >= 60 && total > 0 && total < expectSec * 5000) throw new Error('只有试听片段，不是完整的歌')
     const reader = res.body!.getReader()
     let head = Buffer.alloc(0)
     while (head.length < 12) {
@@ -295,9 +303,15 @@ export const reportPlayFail = (song: any, scriptId: string) => {
   for (const k of [...urlCache.keys()]) if (urlCache.get(k)?.v?.song?.id == song.id || k.startsWith(song.id + '_')) urlCache.delete(k)
 }
 
+let qsRefreshed = false
 interface UrlOptions { exclude?: Set<string>, onlyBad?: boolean }
 const requestUrlBySong = async(song: any, preferred: string, errors: string[], opts: UrlOptions = {}) => {
   // onlyBad：最后的兜底，只试之前被标记为「时长不符」的脚本（可能其实是歌曲信息本身不准）
+  // 汽水是后来才认识的平台：升级前初始化过的音源还没上报过支不支持它，先全部初始化一遍
+  if (song.source == 'qs' && !qsRefreshed && !userApi.getList().some(m => m.enabled && m.sources?.qs)) {
+    qsRefreshed = true // 每次运行只做一次：确实没有支持汽水的音源时不要反复折腾
+    await userApi.ensureAll()
+  }
   const scripts = userApi.getList().filter(m => m.enabled && !opts.exclude?.has(`${m.id}|${song.id}`) &&
     (!m.sources || m.sources[song.source]?.actions.includes('musicUrl')) && isBadUrl(m.id, song.id) == !!opts.onlyBad)
   // 最近连续失败的脚本排到后面；其余按测速/历史表现从快到慢（设置为「按列表顺序」时保持手动顺序）
@@ -308,7 +322,10 @@ const requestUrlBySong = async(song: any, preferred: string, errors: string[], o
   const auto = autoOrder()
   const rank = new Map(scripts.map(m => [m.id, [penalty(m.id), auto ? pairScore(`${m.id}_${song.source}`) : 0]]))
   scripts.sort((a, b) => rank.get(a.id)![0] - rank.get(b.id)![0] || rank.get(a.id)![1] - rank.get(b.id)![1])
-  const info = { ...song, typeUrl: {} }
+  // 汽水：音源脚本各自从不同的字段里取歌曲 ID，都给上
+  const info = song.source == 'qs' ? { ...song, id: song.songmid, songId: song.songmid, typeUrl: {} } : { ...song, typeUrl: {} }
+  // 汽水有的音源只给 30 秒试听：按文件大小先挡掉，不用等播放器发现时长不对
+  const expectSec = song.source == 'qs' ? String(song.interval ?? '').split(':').reduce((n: number, p: string) => n * 60 + (parseInt(p) || 0), 0) : 0
   for (const meta of scripts) {
     const key = `${meta.id}_${song.source}`
     for (const quality of pickQualitys(song, preferred, meta.sources?.[song.source]?.qualitys)) {
@@ -317,7 +334,7 @@ const requestUrlBySong = async(song: any, preferred: string, errors: string[], o
         const r = await userApi.request(meta.id, { source: song.source, action: 'musicUrl', info: { type: quality, musicInfo: info } }, 15_000)
         const url = r?.data?.url
         if (!url) throw new Error('未返回链接')
-        await checkPlayable(url)
+        await checkPlayable(url, expectSec)
         failStat.delete(key)
         notePair(key, { ok: true, ms: Date.now() - t0 })
         return { url: url as string, quality, scriptId: meta.id, scriptName: meta.name, unverified: !!opts.onlyBad }

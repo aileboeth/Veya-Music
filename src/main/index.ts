@@ -10,6 +10,7 @@ import { lxDbPath, readLxDatabase, readLxFile } from './lxImport'
 import { cancelImport, importPlaylist } from './listImport'
 import * as updater from './updater'
 import { applyProxy, setProxyHandlers } from './net'
+import * as qishui from './qishui'
 
 const isDev = !!process.env.ELECTRON_RENDERER_URL
 let mainWin: BrowserWindow | null = null
@@ -398,7 +399,7 @@ const runDevScript = () => {
   if (app.isPackaged || !process.env.VEYA_DEV_SCRIPT) return
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    require(process.env.VEYA_DEV_SCRIPT)({ app, api, userApi, music, store: { load, save }, importSourceFiles, getMainWin: () => mainWin, getLyricWin: () => lyricWin })
+    require(process.env.VEYA_DEV_SCRIPT)({ app, api, userApi, music, qishui, store: { load, save }, importSourceFiles, getMainWin: () => mainWin, getLyricWin: () => lyricWin })
   } catch (err) {
     console.error('[dev script]', err)
   }
