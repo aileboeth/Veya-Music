@@ -203,6 +203,9 @@ h3 { font-size: 14px; margin: 18px 0 10px; color: var(--text2); font-weight: 600
 .spinner.mini { width: 14px; height: 14px; border-width: 2px; }
 @media (max-width: 640px) {
   .item:not(.col):not(.device) { flex-wrap: wrap; }
+  .status .flex1 { flex-basis: 100%; }
+  .status .row { width: 100%; }
+  .status .row .btn { flex: 1; }
   .cmd code { font-size: 11px; }
 }
 </style>

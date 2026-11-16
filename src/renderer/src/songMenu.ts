@@ -5,6 +5,8 @@ import { isLoved, removeSongs, toggleLove } from './lists'
 import { addNext, enqueue, player, playSong, removeFromQueue, startRadio } from './player'
 import { settings } from './settings'
 import { go, openMenu, pickListFor, toast, type MenuItem } from './ui'
+import { pushSong } from './remote'
+import { sync } from './sync'
 
 export const download = async(songs: Song[]) => {
   if (!songs.length) return
@@ -48,8 +50,14 @@ export const openSongMenu = (e: MouseEvent, song: Song, opts: SongMenuOptions = 
     { divider: true },
     { label: '相似歌曲电台', icon: 'radio', action: () => void startRadio(song) },
     ...(mainSinger ? [{ label: `搜索「${mainSinger}」`, icon: 'search', action: () => go('search', { text: mainSinger }) }] : []),
-    { label: '复制歌名', icon: 'copy', action: () => { void navigator.clipboard.writeText(`${song.name} - ${song.singer}`); toast('已复制') } },
+    { label: '复制歌名', icon: 'copy', action: () => { void api('app.copy', `${song.name} - ${song.singer}`).then(() => toast('已复制')) } },
   ]
+  // 推到其他在线设备上播放（需要连接同步服务器）
+  const devices = sync.devices.filter(d => d.online && d.id != sync.deviceId)
+  if (devices.length) {
+    items.push({ divider: true })
+    for (const d of devices) items.push({ label: `在「${d.name}」上播放`, icon: d.platform == 'android' ? 'phone' : 'desktop', action: () => void pushSong(d.id, song, 'now') })
+  }
   if (opts.recommend) {
     items.push({ divider: true })
     items.push({ label: '不喜欢这首歌', icon: 'ban', action: () => { void dislike(song).then(opts.onRemoved) } })

@@ -28,6 +28,11 @@ export const go = (name: string, params: Record<string, any> = {}) => {
   router.index = router.stack.length - 1
 }
 export const back = () => { if (router.canBack) router.index-- }
+/** 手机版切换底部标签：清空历史，从这个标签的首页开始 */
+export const resetTo = (name: string, params: Record<string, any> = {}) => {
+  router.stack.splice(0, router.stack.length, makeRoute(name, params))
+  router.index = 0
+}
 export const forward = () => { if (router.canForward) router.index++ }
 
 // ---------- 轻提示 ----------
@@ -54,6 +59,10 @@ export const openMenu = (e: MouseEvent | { x: number, y: number }, items: MenuIt
   menu.show = true
 }
 export const closeMenu = () => { menu.show = false }
+
+// ---------- 底部弹出面板（手机版：定时关闭、设备、播放页的更多操作） ----------
+export const sheet = reactive({ show: '' as '' | 'sleep' | 'devices' | 'npmore' })
+export const openSheet = (name: typeof sheet.show) => { sheet.show = name }
 
 // ---------- 对话框 ----------
 interface DialogState {

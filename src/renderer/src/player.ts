@@ -277,8 +277,20 @@ audio.addEventListener('timeupdate', () => {
   // 定时给桌面歌词对一下表（拖动进度、卡顿之后不会跑偏）
   if (player.lyricWindow && Date.now() - lastLyricPush > 1500) pushDesktopLyric()
 })
+/** 定时关闭选了「放完这首再停」：这首放完就停（电脑版用，手机版由原生播放器处理） */
+let stopAfterCurrent: (() => void) | null = null
+export const setStopAfterCurrent = (on: boolean, cb: () => void = () => {}) => { stopAfterCurrent = on ? cb : null }
+
 audio.addEventListener('ended', () => {
   settleStats(false, true)
+  if (stopAfterCurrent) {
+    const cb = stopAfterCurrent
+    stopAfterCurrent = null
+    player.playing = false
+    syncState()
+    cb()
+    return
+  }
   void next(true)
 })
 audio.addEventListener('error', () => {
@@ -368,15 +380,15 @@ nativeAudio?.addEventListener('advanced', () => {
 // 队列、播放模式变了：重新预加载
 watch(() => [settings.playMode, player.queue.length, player.index], () => { if (nativeAudio && started) void prefetchNext() })
 
-const playIndex = (index: number, autoplay = true) => {
+const playIndex = (index: number, autoplay = true, startAt = 0) => {
   const song = player.queue[index]
   if (!song) return
   player.index = index
-  void loadSong(song, autoplay)
+  void loadSong(song, autoplay, startAt)
 }
 
 /** 播放一个列表（替换当前队列） */
-export const playList = (songs: Song[], index = 0, source: QueueSource | null = null) => {
+export const playList = (songs: Song[], index = 0, source: QueueSource | null = null, startAt = 0, autoplay = true) => {
   if (!songs.length) return
   settleStats(false)
   player.queue = songs.map(s => markRaw(s))
@@ -384,7 +396,7 @@ export const playList = (songs: Song[], index = 0, source: QueueSource | null = 
   player.radio = source?.type == 'radio'
   shuffleHistory.length = 0
   failCount = 0
-  playIndex(Math.max(0, Math.min(index, songs.length - 1)))
+  playIndex(Math.max(0, Math.min(index, songs.length - 1)), autoplay, startAt)
 }
 
 /** 播放队列里的某一首 */
@@ -461,6 +473,10 @@ export const toggle = () => {
     else audio.pause()
   } else void loadSong(player.song, true, player.time)
 }
+
+/** 只暂停 / 只继续（设备联动用，不像 toggle 那样会反过来） */
+export const pause = () => { if (audio.src && !audio.paused) audio.pause() }
+export const resume = () => { if (!player.playing) toggle() }
 
 export const seek = (time: number) => {
   if (!player.song) return

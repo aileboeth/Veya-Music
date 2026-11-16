@@ -116,4 +116,14 @@ header { display: flex; align-items: center; gap: 4px; padding: 16px 12px 10px 1
 .slide-enter-from, .slide-leave-to { transform: translateX(30px); opacity: 0; }
 .fade-enter-active, .fade-leave-active { transition: opacity .2s; }
 .fade-enter-from, .fade-leave-to { opacity: 0; }
+
+/* 手机：从底部弹出的面板，盖在播放页上面 */
+:root.mobile .mask { position: fixed; z-index: 70; background: rgba(8, 12, 26, 0.4); }
+:root.mobile .queue { position: fixed; left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 72vh; z-index: 71; border-radius: 22px 22px 0 0; border-bottom: 0; padding-bottom: var(--safe-bottom, 0px); }
+:root.mobile .rm { visibility: visible; width: 36px; height: 36px; }
+:root.mobile .q-row .time { display: none; }
+:root.mobile .q-row:hover { background: none; }
+:root.mobile .q-row.current { background: var(--active); }
+:root.mobile .name { font-size: 15px; }
+:root.mobile .slide-enter-from, :root.mobile .slide-leave-to { transform: translateY(100%); opacity: 1; }
 </style>

@@ -5,6 +5,7 @@ import ListCard from '../components/ListCard.vue'
 import Page from '../components/Page.vue'
 import SongList from '../components/SongList.vue'
 import { go } from '../ui'
+import { clearSearchHistory, searchHistory } from '../history'
 
 const props = defineProps<{ params: Record<string, any> }>()
 
@@ -112,6 +113,10 @@ const onScroll = (e: Event) => {
     <template v-else>
       <h1 class="page-title">搜索</h1>
       <p class="muted">在上方搜索框输入歌名、歌手或歌单名，会同时搜索酷我、酷狗、QQ、网易、咪咕五个平台。</p>
+      <template v-if="searchHistory.length">
+        <div class="section-title">搜索历史<span class="spacer" /><a @click="clearSearchHistory">清空</a></div>
+        <div class="hot"><button v-for="h in searchHistory" :key="h" class="chip" @click="go('search', { text: h })">{{ h }}</button></div>
+      </template>
       <div v-if="hot.length" class="section-title">热门搜索</div>
       <div class="hot">
         <button v-for="(h, i) in hot" :key="h" class="chip" @click="go('search', { text: h })"><b v-if="i < 3" class="grad-text">{{ i + 1 }}</b>{{ h }}</button>

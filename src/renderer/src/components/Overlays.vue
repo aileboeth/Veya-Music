@@ -3,6 +3,7 @@
 import { nextTick, ref, watch } from 'vue'
 import { addSongs, createList, lists } from '../lists'
 import { closeDialog, closeMenu, dialog, listPicker, menu, toast, toasts, type MenuItem } from '../ui'
+import { isAndroid } from '../platform'
 import Icon from './Icon.vue'
 
 // ----- 右键菜单：防止超出窗口 -----
@@ -57,9 +58,10 @@ const createAndAdd = () => {
   </TransitionGroup>
 
   <!-- 右键菜单 -->
-  <div v-if="menu.show" class="menu-mask" @mousedown="closeMenu" @contextmenu.prevent="closeMenu" />
-  <Transition name="menu">
-    <div v-if="menu.show" ref="menuEl" class="menu" :style="{ left: pos.x + 'px', top: pos.y + 'px' }">
+  <div v-if="menu.show" class="menu-mask" :class="{ sheet: isAndroid }" @mousedown="closeMenu" @contextmenu.prevent="closeMenu" />
+  <Transition :name="isAndroid ? 'msheet' : 'menu'">
+    <div v-if="menu.show" ref="menuEl" class="menu" :class="{ sheet: isAndroid }" :style="isAndroid ? {} : { left: pos.x + 'px', top: pos.y + 'px' }">
+      <div v-if="isAndroid" class="grip" />
       <template v-for="(item, i) in menu.items" :key="i">
         <div v-if="item.divider" class="divider" />
         <button v-else class="item" :class="{ danger: item.danger, disabled: item.disabled }" @click="runItem(item)">
@@ -145,4 +147,18 @@ const createAndAdd = () => {
 .modal-enter-active .modal, .modal-leave-active .modal { transition: transform .18s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }
 .modal-enter-from .modal, .modal-leave-to .modal { transform: scale(0.96); }
+
+/* 手机：菜单从底部弹出，按钮大一些 */
+.menu-mask.sheet { background: rgba(8, 12, 26, 0.38); }
+.menu.sheet { left: 0; right: 0; bottom: 0; top: auto; min-width: 0; max-width: none; max-height: 80vh; overflow-y: auto; border-radius: 22px 22px 0 0; border-bottom: 0; padding: 6px 10px calc(var(--safe-bottom, 0px) + 10px); }
+.menu.sheet .item { height: 50px; font-size: 15.5px; gap: 12px; padding: 0 12px; }
+.menu.sheet .item:hover { background: none; color: inherit; }
+.menu.sheet .item:active { background: var(--active); }
+.menu.sheet .grip { width: 38px; height: 4px; border-radius: 2px; background: var(--text3); opacity: .5; margin: 6px auto 8px; }
+.msheet-enter-active, .msheet-leave-active { transition: transform .24s cubic-bezier(.2, .8, .2, 1); }
+.msheet-enter-from, .msheet-leave-to { transform: translateY(100%); }
+:root.mobile .toasts { bottom: calc(var(--safe-bottom, 0px) + 150px); padding: 0 20px; }
+:root.mobile .toast { font-size: 14px; }
+:root.mobile .modal { padding: 22px 20px; border-radius: 22px; }
+:root.mobile .modal .btn { height: 42px; padding: 0 22px; }
 </style>

@@ -52,4 +52,7 @@ const onUp = (e: PointerEvent) => {
 .thumb { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; background: #fff; box-shadow: 0 1px 5px rgba(20, 40, 100, 0.4); opacity: 0; transition: opacity .12s; }
 .slider:hover .thumb, .slider.dragging .thumb { opacity: 1; }
 .slider:hover .track, .slider.dragging .track { height: 5px; }
+/* 手机：滑块一直显示，触摸范围大一些 */
+:root.mobile .slider { height: 26px; }
+:root.mobile .slider .thumb { opacity: 1; width: 14px; height: 14px; margin: -7px 0 0 -7px; }
 </style>

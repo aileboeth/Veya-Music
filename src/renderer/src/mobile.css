@@ -1,0 +1,78 @@
+/* 手机版：电脑版页面的竖屏适配（只在 html.mobile 下生效） */
+html.mobile body {
+  font-family: system-ui, 'Roboto', 'Noto Sans SC', 'Noto Sans CJK SC', 'PingFang SC', sans-serif;
+  font-size: 15px;
+  -webkit-tap-highlight-color: transparent;
+  overscroll-behavior: none;
+}
+html.mobile ::-webkit-scrollbar { width: 0; height: 0; }
+html.mobile .page { padding: 2px 16px 24px; overscroll-behavior-y: contain; }
+html.mobile .page-title { font-size: 22px; margin: 6px 0 14px; }
+html.mobile .m-view:not(.r-discover) .page-title { display: none; }
+html.mobile .section-title { font-size: 17px; margin: 24px 0 12px; }
+html.mobile .card-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px 10px; }
+html.mobile .btn { height: 38px; border-radius: 19px; }
+html.mobile .btn.small { height: 32px; }
+html.mobile .icon-btn:hover, html.mobile .btn:hover, html.mobile .chip:hover { background: inherit; box-shadow: none; }
+html.mobile .tabs { max-width: 100%; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+html.mobile .tabs button { height: 32px; flex: none; }
+html.mobile .empty { padding: 40px 16px; }
+html.mobile .center-box { padding: 48px 16px; }
+
+/* 歌单 / 榜单头部：封面在左、信息在右，按钮换行 */
+html.mobile .list-hero { gap: 14px; align-items: center; margin: 4px 0 16px; flex-wrap: wrap; }
+html.mobile .list-hero .hero-cover, html.mobile .list-hero .hero-icon { width: 112px !important; height: 112px !important; border-radius: 16px !important; }
+html.mobile .list-hero .hero-icon svg { width: 46px; height: 46px; }
+html.mobile .list-hero .hero-info { min-width: 0; flex: 1; gap: 6px; }
+html.mobile .list-hero h1 { font-size: 19px; }
+html.mobile .list-hero .hero-desc { font-size: 12.5px; }
+html.mobile .list-hero .hero-btns { width: 100%; flex-basis: 100%; order: 3; gap: 8px; }
+html.mobile .list-hero .hero-btns .btn { height: 36px; padding: 0 14px; }
+html.mobile .list-hero .hero-btns .btn.primary { flex: 1; }
+
+/* 首页 */
+html.mobile .heroes { grid-template-columns: 1fr 1fr; gap: 10px; }
+html.mobile .hero { height: auto; min-height: 112px; padding: 14px; flex-direction: column; align-items: flex-start; gap: 8px; border-radius: 18px; }
+html.mobile .hero h2 { font-size: 17px; margin-bottom: 4px; }
+html.mobile .hero p { font-size: 11.5px; -webkit-line-clamp: 2; }
+html.mobile .hero .date { width: 46px; height: 50px; border-radius: 12px; }
+html.mobile .hero .date b { font-size: 20px; }
+html.mobile .hero .waves { height: 40px; width: 46px; }
+html.mobile .hero-play { position: absolute; right: 12px; top: 12px; width: 40px; height: 40px; }
+html.mobile .guess { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+html.mobile .g-item { padding: 7px 4px; }
+html.mobile .g-play { opacity: 1; }
+html.mobile .boards { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+html.mobile .board { padding: 12px 8px 8px; }
+html.mobile .b-song { height: 30px; font-size: 12.5px; }
+html.mobile .notice { font-size: 13px; }
+
+/* 排行榜：左边的榜单列表改成顶部横向滚动 */
+html.mobile .boards-view { flex-direction: column; }
+html.mobile .boards-view .side { width: auto; padding: 0 16px; flex: none; }
+html.mobile .boards-view .b-list { flex-direction: row; overflow-x: auto; margin-top: 10px; padding-bottom: 4px; scrollbar-width: none; flex: none; }
+html.mobile .boards-view .b-item { flex: none; height: 32px; border-radius: 16px; background: var(--card); border: 1px solid var(--border); }
+html.mobile .boards-view .b-item.on { background: var(--active); border-color: transparent; }
+html.mobile .boards-view .main { padding-left: 16px; }
+html.mobile .boards-view .head { margin: 10px 0 6px; }
+html.mobile .boards-view .head .btn { flex: 1; }
+
+/* 歌单广场 / 搜索 */
+html.mobile .bar { gap: 8px; }
+html.mobile .bar > .spacer { display: none; }
+html.mobile .tags { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+html.mobile .tags .chip { flex: none; }
+html.mobile .g-name { width: 44px; }
+
+/* 下载 */
+html.mobile .task { padding: 10px 4px; gap: 12px; }
+
+/* 设置 */
+html.mobile .item { flex-wrap: wrap; gap: 10px 14px; padding: 12px 14px; }
+html.mobile .item > div:first-child { flex: 1; min-width: 60%; }
+html.mobile .item .tabs { max-width: 100%; }
+html.mobile .source { flex-wrap: wrap; }
+html.mobile .source .s-info { flex-basis: calc(100% - 40px); }
+html.mobile .hint { font-size: 13px; }
+html.mobile section { margin-bottom: 26px; }
+html.mobile section h2 { font-size: 17px; }

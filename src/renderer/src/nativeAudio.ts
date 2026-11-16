@@ -99,7 +99,10 @@ export class NativeAudio extends EventTarget {
     this.posAt = performance.now()
     this._paused = true
     this.loadId = ++this.seq
-    if (!this._src) return void this.bridge.cmd('stop')
+    if (!this._src) {
+      this.bridge.cmd('stop')
+      return
+    }
     this.bridge.cmd('load', { url: this._src, loadId: this.loadId })
   }
   removeAttribute(name: string) {

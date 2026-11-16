@@ -20,6 +20,8 @@ export const settings = reactive({
   downloadQuality: '320k',
   downloadLyric: true,
   showTranslation: true,
+  /** 手机版：锁屏 / 通知栏 / 车载蓝牙显示当前这句歌词 */
+  lockLyric: false,
   desktopLyric: { fontSize: 30, locked: false, color: 'aurora' } as Record<string, any>,
   /** 播放页：layout = 封面在左侧 / 居中在上；visual = 律动效果 */
   nowPlaying: { layout: 'side', visual: 'ring' } as { layout: 'side' | 'center', visual: 'ring' | 'wave' | 'bars' | 'off' },

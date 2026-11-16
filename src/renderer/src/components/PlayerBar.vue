@@ -5,7 +5,10 @@ import { isLoved, toggleLove } from '../lists'
 import { modeNames, next, player, playModes, prev, seek, setMode, setQuality, toggle, toggleDesktopLyric } from '../player'
 import { settings } from '../settings'
 import { dislike } from '../songMenu'
-import { go, openMenu } from '../ui'
+import { go, openMenu, openSheet } from '../ui'
+import { sleepLeft, sleepState } from '../sleep'
+import { sync } from '../sync'
+import RemoteBanner from './RemoteBanner.vue'
 import Cover from './Cover.vue'
 import Icon from './Icon.vue'
 import Slider from './Slider.vue'
@@ -77,6 +80,7 @@ const locate = () => {
         </button>
       </template>
       <div v-else class="idle dim">Veya Music · 听见你的喜欢</div>
+      <RemoteBanner class="remote" />
     </div>
 
     <div class="center">
@@ -105,6 +109,8 @@ const locate = () => {
         <button class="icon-btn" :title="`音量 ${Math.round(settings.volume * 100)}%`" @click="toggleMute"><Icon :name="settings.volume > 0 ? 'volume' : 'mute'" :size="18" /></button>
         <Slider class="vol-bar" :value="settings.volume" :max="1" @input="settings.volume = $event" @change="settings.volume = $event" />
       </div>
+      <button class="icon-btn" :class="{ on: !!sleepState.until || sleepState.waitingSong }" :title="sleepState.until || sleepState.waitingSong ? '定时关闭：' + sleepLeft() : '定时关闭'" @click="openSheet('sleep')"><Icon name="timer" :size="19" /></button>
+      <button v-if="sync.paired" class="icon-btn" :class="{ on: sync.devices.some(d => d.online && d.id != sync.deviceId) }" title="设备：接力播放、推歌、一起听" @click="openSheet('devices')"><Icon name="cast" :size="19" /></button>
       <button class="icon-btn" :class="{ on: player.showQueue }" title="播放队列" @click="player.showQueue = !player.showQueue">
         <Icon name="queue" :size="19" />
       </button>
@@ -128,6 +134,7 @@ const locate = () => {
 .from:hover { color: var(--accent); }
 .love.loved { color: #ff4d6d; }
 .idle { font-size: 13px; padding-left: 4px; }
+.remote { position: absolute; left: 20px; bottom: 84px; max-width: 420px; }
 
 .center { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .controls { display: flex; align-items: center; justify-content: center; gap: 10px; }

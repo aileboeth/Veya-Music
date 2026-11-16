@@ -8,6 +8,8 @@ import ImportDialog from './components/ImportDialog.vue'
 import Overlays from './components/Overlays.vue'
 import PlayerBar from './components/PlayerBar.vue'
 import QueuePanel from './components/QueuePanel.vue'
+import DevicesSheet from './components/DevicesSheet.vue'
+import SleepSheet from './components/SleepSheet.vue'
 import { createList, lists, removeList, type MyList } from './lists'
 import { addSearchHistory, clearSearchHistory, initSearchHistory, searchHistory as history } from './history'
 import { next, player, playList, prev, toggle } from './player'
@@ -199,6 +201,8 @@ onBeforeUnmount(() => {
     <QueuePanel />
     <PlayerBar class="bar" />
     <ImportDialog />
+    <SleepSheet />
+    <DevicesSheet />
     <Overlays />
   </div>
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { nextTick, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { api, on, QUALITYS, SOURCES } from '../api'
 import Icon from '../components/Icon.vue'
 import Page from '../components/Page.vue'
@@ -7,10 +7,18 @@ import SyncSettings from '../components/SyncSettings.vue'
 import { importLists } from '../lists'
 import { player, toggleDesktopLyric } from '../player'
 import { settings } from '../settings'
-import { alertDialog, confirmDialog, openImport, toast } from '../ui'
+import { alertDialog, confirmDialog, openImport, openSheet, toast } from '../ui'
+import { isAndroid } from '../platform'
+import { sleepLeft, sleepState } from '../sleep'
 import { checkUpdate, installUpdate, showChangelog, update, updateText } from '../update'
 
-defineProps<{ params: Record<string, any> }>()
+const props = defineProps<{ params: Record<string, any> }>()
+
+// 从别处跳过来设置同步（「我的」页、设备面板）：滚到同步那一节
+const scrollToSync = () => void nextTick(() => document.querySelector('.sync-section')?.scrollIntoView({ block: 'start' }))
+watch(() => props.params._sync, v => { if (v) scrollToSync() })
+onMounted(() => { if (props.params._sync) setTimeout(scrollToSync, 300) })
+onActivated(() => { if (props.params._sync) scrollToSync() })
 
 // ---------- 音源 ----------
 const sources = ref<any[]>([])
@@ -186,7 +194,7 @@ const placeLyric = (where: string) => void api('lyric.place', where)
       <p class="hint">Veya Music 兼容 LX Music 的自定义音源脚本（.js）。一个音源失败了会自动换下一个，全部失败再自动换到其他平台的同一首歌。点「测速」可以看每个音源在各平台取链接要多久。</p>
       <div class="row gap8" style="margin-bottom: 12px; flex-wrap: wrap">
         <button class="btn primary" @click="pickFiles"><Icon name="plus" :size="16" />导入音源脚本</button>
-        <button class="btn" @click="pickFolder"><Icon name="folder" :size="16" />导入整个文件夹</button>
+        <button v-if="!isAndroid" class="btn" @click="pickFolder"><Icon name="folder" :size="16" />导入整个文件夹</button>
         <button class="btn" :disabled="speed.running || !sources.some(s => s.enabled)" @click="runSpeedTest">
           <span v-if="speed.running" class="spinner mini" /><Icon v-else name="sparkle" :size="16" />{{ speed.running ? `测速中 ${speed.done}/${speed.total}` : '测速' }}
         </button>
@@ -246,9 +254,13 @@ const placeLyric = (where: string) => void api('lyric.place', where)
         <div><b>显示歌词翻译</b><span>外语歌曲在原文下方显示中文翻译</span></div>
         <button class="switch" :class="{ on: settings.showTranslation }" @click="settings.showTranslation = !settings.showTranslation" />
       </div>
+      <div class="item">
+        <div><b>定时关闭</b><span>{{ sleepState.until || sleepState.waitingSong ? `已开启，还剩 ${sleepLeft()}` : '到时间自动暂停，可以选择把当前这首放完再停' }}</span></div>
+        <button class="btn small" @click="openSheet('sleep')"><Icon name="timer" :size="15" />设置</button>
+      </div>
     </section>
 
-    <SyncSettings />
+    <SyncSettings class="sync-section" />
 
     <section>
       <h2>网络</h2>
@@ -288,7 +300,7 @@ const placeLyric = (where: string) => void api('lyric.place', where)
           <button :class="{ on: settings.theme == 'system' }" @click="settings.theme = 'system'">跟随系统</button>
         </div>
       </div>
-      <div class="item">
+      <div v-if="!isAndroid" class="item">
         <div><b>关闭窗口时</b><span>最小化到托盘后音乐继续播放，右键托盘图标可以退出</span></div>
         <div class="tabs">
           <button :class="{ on: settings.closeToTray }" @click="settings.closeToTray = true">最小化到托盘</button>
@@ -298,21 +310,21 @@ const placeLyric = (where: string) => void api('lyric.place', where)
     </section>
 
     <section>
-      <h2>桌面歌词</h2>
+      <h2>{{ isAndroid ? '悬浮歌词' : '桌面歌词' }}</h2>
       <div class="item">
-        <div><b>显示桌面歌词</b><span>悬浮在所有窗口之上，可拖动和调整大小</span></div>
+        <div><b>{{ isAndroid ? '显示悬浮歌词' : '显示桌面歌词' }}</b><span>{{ isAndroid ? '浮在其他应用上面，上下拖动换位置，点一下出现控制按钮（第一次需要允许「显示在其他应用上层」）' : '悬浮在所有窗口之上，可拖动和调整大小' }}</span></div>
         <button class="switch" :class="{ on: player.lyricWindow }" @click="toggleDesktopLyric" />
       </div>
       <div class="item">
-        <div><b>锁定位置</b><span>锁定后鼠标可以穿透歌词；把鼠标移到歌词上会出现解锁按钮</span></div>
+        <div><b>锁定位置</b><span>{{ isAndroid ? '锁定后点击会穿透到下面的应用；在这里关掉锁定就能再拖动' : '锁定后鼠标可以穿透歌词；把鼠标移到歌词上会出现解锁按钮' }}</span></div>
         <button class="switch" :class="{ on: settings.desktopLyric.locked }" @click="setLyric({ locked: !settings.desktopLyric.locked })" />
       </div>
       <div class="item">
         <div><b>字号</b></div>
         <div class="row gap8">
-          <button class="btn small" @click="setLyric({ fontSize: Math.max(18, (settings.desktopLyric.fontSize ?? 30) - 2) })">A-</button>
-          <span class="num">{{ settings.desktopLyric.fontSize ?? 30 }}</span>
-          <button class="btn small" @click="setLyric({ fontSize: Math.min(64, (settings.desktopLyric.fontSize ?? 30) + 2) })">A+</button>
+          <button class="btn small" @click="setLyric({ fontSize: Math.max(isAndroid ? 14 : 18, (settings.desktopLyric.fontSize ?? (isAndroid ? 22 : 30)) - 2) })">A-</button>
+          <span class="num">{{ settings.desktopLyric.fontSize ?? (isAndroid ? 22 : 30) }}</span>
+          <button class="btn small" @click="setLyric({ fontSize: Math.min(isAndroid ? 40 : 64, (settings.desktopLyric.fontSize ?? (isAndroid ? 22 : 30)) + 2) })">A+</button>
         </div>
       </div>
       <div class="item">
@@ -332,14 +344,14 @@ const placeLyric = (where: string) => void api('lyric.place', where)
           <button :class="{ on: settings.desktopLyric.effect == 'none' }" @click="setLyric({ effect: 'none' })">静态</button>
         </div>
       </div>
-      <div class="item">
+      <div v-if="!isAndroid" class="item">
         <div><b>显示方式</b><span>单行：当前这句 + 翻译或下一句；双行交错：两句一左一右轮流唱，像 KTV</span></div>
         <div class="tabs">
           <button :class="{ on: (settings.desktopLyric.mode ?? 'single') == 'single' }" @click="setLyric({ mode: 'single' })">单行</button>
           <button :class="{ on: settings.desktopLyric.mode == 'double' }" @click="setLyric({ mode: 'double' })">双行交错</button>
         </div>
       </div>
-      <div class="item">
+      <div v-if="!isAndroid" class="item">
         <div><b>对齐</b><span>单行显示时歌词靠哪一边</span></div>
         <div class="tabs">
           <button :class="{ on: settings.desktopLyric.align == 'left' }" @click="setLyric({ align: 'left' })">居左</button>
@@ -348,12 +360,16 @@ const placeLyric = (where: string) => void api('lyric.place', where)
         </div>
       </div>
       <div class="item">
-        <div><b>位置</b><span>一键摆到屏幕的固定位置（也可以直接用鼠标拖）</span></div>
+        <div><b>位置</b><span>一键摆到屏幕的固定位置（也可以直接拖动）</span></div>
         <div class="row gap8">
           <button class="btn small" @click="placeLyric('top')">屏幕顶部</button>
           <button class="btn small" @click="placeLyric('middle')">屏幕中间</button>
           <button class="btn small" @click="placeLyric('bottom')">屏幕底部</button>
         </div>
+      </div>
+      <div v-if="isAndroid" class="item">
+        <div><b>锁屏和通知栏显示歌词</b><span>把正在唱的那一句显示在锁屏、通知栏和车载蓝牙的「歌手」一栏</span></div>
+        <button class="switch" :class="{ on: settings.lockLyric }" @click="settings.lockLyric = !settings.lockLyric" />
       </div>
     </section>
 
@@ -364,8 +380,8 @@ const placeLyric = (where: string) => void api('lyric.place', where)
         <div class="tabs"><button v-for="q in QUALITYS" :key="q.id" :class="{ on: settings.downloadQuality == q.id }" @click="settings.downloadQuality = q.id">{{ q.name }}</button></div>
       </div>
       <div class="item">
-        <div><b>保存位置</b><span class="path">{{ settings.downloadDir || '默认：音乐\\Veya Music' }}</span></div>
-        <div class="row gap8">
+        <div><b>保存位置</b><span class="path">{{ isAndroid ? '手机的「音乐/Veya Music」文件夹（其他音乐 App 也能看到）；下载过的歌没网也能放' : settings.downloadDir || '默认：音乐\\Veya Music' }}</span></div>
+        <div v-if="!isAndroid" class="row gap8">
           <button v-if="settings.downloadDir" class="btn small" @click="settings.downloadDir = ''">恢复默认</button>
           <button class="btn small" @click="chooseDir">更改</button>
         </div>

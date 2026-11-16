@@ -6,6 +6,7 @@ import { isLoved, removeSongs, toggleLove } from '../lists'
 import { confirmDialog, toast } from '../ui'
 import { addNext, player, playList, toggle, type QueueSource } from '../player'
 import { dislike, openSongMenu } from '../songMenu'
+import { isAndroid } from '../platform'
 import Cover from './Cover.vue'
 import Icon from './Icon.vue'
 
@@ -147,7 +148,11 @@ const removePicked = async() => {
   exitManage()
   emit('removed')
 }
-const onRowClick = (song: Song) => { if (manage.value) togglePick(song.id) }
+// 手机上点一下就播放（电脑上是双击）
+const onRowClick = (song: Song, index: number) => {
+  if (manage.value) togglePick(song.id)
+  else if (isAndroid) play(index)
+}
 const onRowDbl = (index: number) => { if (!manage.value) play(index) }
 watch(() => props.listId, exitManage)
 </script>
@@ -184,7 +189,7 @@ watch(() => props.listId, exitManage)
         <div
           v-for="(row, i) in visible" :key="row.song.id"
           class="song-row" :class="{ playing: player.song?.id == row.song.id, flash: flashId == row.song.id, managing: manage, picked: manage && picked.has(row.song.id) }"
-          @click="onRowClick(row.song)" @dblclick="onRowDbl(row.index)" @contextmenu="onMenu($event, row.song, row.index)"
+          @click="onRowClick(row.song, row.index)" @dblclick="onRowDbl(row.index)" @contextmenu="onMenu($event, row.song, row.index)"
         >
           <div class="c-idx">
             <span v-if="manage" class="check" :class="{ on: picked.has(row.song.id) }"><Icon v-if="picked.has(row.song.id)" name="check" :size="12" /></span>
@@ -201,6 +206,7 @@ watch(() => props.listId, exitManage)
               <div class="sub">
                 <span v-if="bestQuality(row.song)" class="badge" :class="'q-' + bestQuality(row.song)">{{ qualityLabel[bestQuality(row.song)] }}</span>
                 <span v-if="showSource" class="badge src">{{ sourceName(row.song.source) }}</span>
+                <span class="m-singer ellipsis">{{ row.song.singer }}<template v-if="row.song.albumName"> · {{ row.song.albumName }}</template></span>
                 <span v-if="row.song._reason" class="reason ellipsis">{{ row.song._reason }}</span>
               </div>
             </div>
@@ -211,7 +217,7 @@ watch(() => props.listId, exitManage)
               </button>
               <button v-if="recommend" class="icon-btn" title="不喜欢，以后不再推荐" @click.stop="dislike(row.song).then(() => emit('removed'))"><Icon name="ban" :size="16" /></button>
               <button class="icon-btn" title="下一首播放" @click.stop="addNext([row.song])"><Icon name="playnext" :size="16" /></button>
-              <button class="icon-btn" title="更多" @click.stop="onMenu($event, row.song, row.index)"><Icon name="more" :size="16" /></button>
+              <button class="icon-btn more-btn" title="更多" @click.stop="onMenu($event, row.song, row.index)"><Icon name="more" :size="16" /></button>
             </div>
           </div>
           <div class="c-singer ellipsis">{{ row.song.singer }}</div>
@@ -298,4 +304,25 @@ watch(() => props.listId, exitManage)
 .locate-btn:hover { filter: brightness(1.05); box-shadow: 0 10px 30px rgba(42, 98, 255, 0.28); }
 .pop-enter-active, .pop-leave-active { transition: opacity .2s, transform .2s; }
 .pop-enter-from, .pop-leave-to { opacity: 0; transform: translateY(10px); }
+.m-singer { display: none; font-size: 12px; color: var(--text3); min-width: 0; }
+
+/* 手机：一行 = 封面 + 歌名 / 歌手，右边只留「更多」；点一下播放，长按出菜单 */
+:root.mobile .song-list .head, :root.mobile .song-list .c-singer, :root.mobile .song-list .c-album, :root.mobile .song-list .c-time { display: none; }
+:root.mobile .song-list .song-row { grid-template-columns: 26px minmax(0, 1fr); gap: 8px; padding: 0 0 0 0; }
+:root.mobile .song-list .song-row:hover { background: none; }
+:root.mobile .song-list .song-row.playing { background: var(--active); }
+:root.mobile .song-list .song-row:active { background: var(--hover); }
+:root.mobile .song-list .c-idx .num { display: inline !important; font-size: 12px; }
+:root.mobile .song-list .c-idx .play-btn { display: none !important; }
+:root.mobile .song-list .m-singer { display: inline; }
+:root.mobile .song-list .reason { display: none; }
+:root.mobile .song-list .actions { display: flex; }
+:root.mobile .song-list .actions .icon-btn:not(.more-btn) { display: none; }
+:root.mobile .song-list .actions .more-btn { width: 40px; height: 40px; color: var(--text3); }
+:root.mobile .song-list .name { font-size: 15px; }
+:root.mobile .song-list .toolbar { flex-wrap: wrap; }
+:root.mobile .song-list .filter { width: auto; flex: 1; min-width: 140px; height: 36px; border-radius: 18px; }
+:root.mobile .song-list .filter:focus-within { width: auto; }
+:root.mobile .song-list .count { display: none; }
+:root.mobile .song-list .locate-btn { max-width: 70vw; }
 </style>

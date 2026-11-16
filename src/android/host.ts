@@ -70,7 +70,10 @@ const api: Record<string, (...args: any[]) => any> = {
       return { stale: true }
     }
     save(key, value)
-    if (key == 'settings') void applyProxy()
+    if (key == 'settings') {
+      void applyProxy()
+      applyLockLyric()
+    }
   },
 
   'search.music': music.searchMusic,
@@ -245,6 +248,21 @@ setTimeout(() => userApi.warmup(), 1500)
 userApi.setOnUpdateAlert(name => emit('app:toast', '音源「' + name + '」提示有新版本，可以到 设置 → 音源 里更新', 'success'))
 setTimeout(() => void userApi.checkUpdates(), 30_000)
 
+// 状态栏 / 导航栏占的高度 → 页面的 --safe-top / --safe-bottom
+const applyInsets = (i: any) => {
+  if (!i) return
+  const st = document.documentElement.style
+  st.setProperty('--safe-top', `${i.top ?? 0}px`)
+  st.setProperty('--safe-bottom', `${i.bottom ?? 0}px`)
+}
+onNative('insets', applyInsets)
+void call('ui.insets').then(applyInsets).catch(() => {})
+
+// 定时关闭到点了（原生播放器已经暂停）
+onNative('sleep', () => emit('sleep:done'))
+// 锁屏 / 通知栏 / 车载蓝牙显示歌词
+const applyLockLyric = () => N.player('lockLyric', JSON.stringify({ on: !!settings().lockLyric }))
+applyLockLyric()
 // 通知栏 / 锁屏 / 耳机按键 → 播放器
 onNative('media', (e: any) => { if (e?.action) emit('player:command', e.action) })
 // 应用切到后台 / 回到前台：停掉页面动画省电
