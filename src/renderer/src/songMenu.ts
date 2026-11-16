@@ -1,6 +1,6 @@
 // 歌曲右键菜单 + 通用歌曲操作
 import { ref } from 'vue'
-import { api, type Song } from './api'
+import { api, on, type Song } from './api'
 import { isLoved, removeSongs, toggleLove } from './lists'
 import { addNext, enqueue, player, playSong, removeFromQueue, startRadio } from './player'
 import { settings } from './settings'
@@ -14,6 +14,8 @@ export const download = async(songs: Song[]) => {
 
 /** 每次标记「不喜欢」后加一，推荐类页面据此刷新列表 */
 export const dislikeVersion = ref(0)
+// 从别的设备同步来了新的每日推荐 / 不喜欢：推荐页重新读取
+on('data:changed', (key: string) => { if (key == 'daily' || key == 'dislikes') dislikeVersion.value++ })
 
 export const dislike = async(song: Song, singer = false) => {
   await api('rec.dislike', song, singer)

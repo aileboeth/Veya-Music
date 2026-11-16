@@ -74,6 +74,8 @@
     "crypto-js": "^4.2.0",
     "electron-updater": "^6.8.11",
     "needle": "^3.5.0",
-    "tunnel": "^0.0.6"
+    "qrcode-generator": "^1.4.4",
+    "tunnel": "^0.0.6",
+    "ws": "^8.18.3"
   }
 }

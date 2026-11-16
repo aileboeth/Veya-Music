@@ -47,8 +47,18 @@ const flush = (key: string) => {
   }
 }
 
+// 同步用：数据被保存时通知同步模块
+let saveHook: (key: string) => void = () => {}
+export const setSaveHook = (fn: (key: string) => void) => { saveHook = fn }
+
+// 界面也持有一份的数据（歌单、设置、搜索历史）：被同步改写时版本号加一，界面拿着旧版本号保存会被拒绝（避免把刚同步来的内容覆盖掉）
+const versions = new Map<string, number>()
+export const version = (key: string) => versions.get(key) ?? 0
+export const bumpVersion = (key: string) => { versions.set(key, version(key) + 1) }
+
 export const save = (key: string, value: any, immediate = false) => {
   cache.set(key, value)
+  try { saveHook(key) } catch (err) { console.error('[store] hook', err) }
   const t = timers.get(key)
   if (t) clearTimeout(t)
   if (immediate) flush(key)

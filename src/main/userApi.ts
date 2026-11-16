@@ -383,6 +383,34 @@ export const request = async(id: string, data: { source: string, action: string,
   })
 }
 
+// ---------- 同步用 ----------
+export const scriptFileInfo = (id: string) => {
+  try {
+    const st = fs.statSync(scriptPath(id))
+    return { size: st.size, mtimeMs: st.mtimeMs }
+  } catch { return null }
+}
+export const readScript = (id: string) => {
+  try { return fs.readFileSync(scriptPath(id), 'utf8') } catch { return null }
+}
+/** 收到别的设备的脚本：内容变了才写文件，并让它下次用到时重新初始化 */
+export const writeRemoteScript = (id: string, text: string) => {
+  if (readScript(id) == text) return
+  void unload(id)
+  fs.writeFileSync(scriptPath(id), text)
+  const item = getList().find(m => m.id == id)
+  if (item) {
+    item.sources = undefined
+    item.updateAlert = undefined
+  }
+}
+export const deleteScriptFile = (id: string) => {
+  void unload(id)
+  try { fs.unlinkSync(scriptPath(id)) } catch {}
+}
+export const unloadScript = (id: string) => { void unload(id) }
+export const saveSourceList = (list: SourceMeta[]) => saveList(list)
+
 export const closeAll = () => {
   for (const id of [...runtimes.keys()]) void unload(id)
 }

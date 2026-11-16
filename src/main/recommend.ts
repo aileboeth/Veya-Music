@@ -16,6 +16,46 @@ export interface SongStat { s: any, plays: number, done: number, skips: number, 
 interface Stats { songs: Record<string, SongStat>, recent: Array<{ id: string, t: number }> }
 
 export const getStats = () => load<Stats>('stats', { songs: {}, recent: [] })
+
+/**
+ * 本机 + 同步来的其他设备的听歌记录合在一起（只读，用来算推荐和「最近播放」）。
+ * 每台设备只写自己的那份，所以这里把次数相加、时间取最近的
+ */
+export const mergedStats = (): Stats => {
+  const own = getStats()
+  const remote = load<Record<string, Record<string, SongStat>>>('statsRemote', {}) ?? {}
+  const devices = Object.values(remote).filter(d => d && Object.keys(d).length)
+  if (!devices.length) return own
+  const songs: Record<string, SongStat> = {}
+  for (const [id, st] of Object.entries(own.songs)) songs[id] = { ...st }
+  for (const dev of devices) {
+    for (const [id, st] of Object.entries(dev)) {
+      if (!st?.s) continue
+      const cur = songs[id]
+      if (!cur) {
+        songs[id] = { ...st }
+        continue
+      }
+      cur.plays += st.plays ?? 0
+      cur.done += st.done ?? 0
+      cur.skips += st.skips ?? 0
+      cur.sp = (cur.sp ?? 0) + (st.sp ?? 0) || undefined
+      cur.days = (cur.days ?? 0) + (st.days ?? 0) || undefined
+      if ((st.last ?? 0) > cur.last) {
+        cur.last = st.last
+        cur.s = st.s
+      }
+      cur.first = Math.min(cur.first || Infinity, st.first || Infinity)
+    }
+  }
+  const ownRecent = new Map(own.recent.map(r => [r.id, r.t]))
+  const recent = Object.entries(songs)
+    .map(([id, st]) => ({ id, t: Math.max(ownRecent.get(id) ?? 0, st.last ?? 0) }))
+    .filter(r => r.t > 0 && (ownRecent.has(r.id) || songs[r.id].plays > 0))
+    .sort((a, b) => b.t - a.t)
+    .slice(0, 300)
+  return { songs, recent }
+}
 // songs 的值：旧版本是 1；现在存歌曲的精简信息，用来按歌名匹配其他平台的同一首歌、以及找「相似的也少推」
 const getDislikes = () => load<{ songs: Record<string, any>, singers: string[] }>('dislikes', { songs: {}, singers: [] })
 const dislikedInfos = () => Object.values(getDislikes().songs).filter(v => v && typeof v == 'object' && v.name) as any[]
@@ -56,12 +96,13 @@ export const record = (song: any, type: 'play' | 'done' | 'skip', from?: string)
 }
 
 export const recentSongs = () => {
-  const stats = getStats()
+  const stats = mergedStats()
   return stats.recent.map(r => stats.songs[r.id] && { ...stats.songs[r.id].s, _playedAt: r.t }).filter(Boolean)
 }
 
 export const clearStats = () => {
   save('stats', { songs: {}, recent: [] }, true)
+  save('statsRemote', {}, true)
   save('daily', null, true)
 }
 
@@ -77,7 +118,7 @@ const librarySongIds = () => {
 }
 
 export const buildProfile = () => {
-  const stats = getStats()
+  const stats = mergedStats()
   const now = Date.now()
   const weights = new Map<string, { song: any, w: number, searched?: boolean }>()
   const library = librarySongIds()
@@ -259,7 +300,7 @@ const negativeScores = async() => {
   return out
 }
 const rankCandidates = (groups: Array<{ seed: any, w: number, list: any[] }>, opts: RankOptions) => {
-  const stats = getStats()
+  const stats = mergedStats()
   const dislikes = getDislikes()
   const { artists } = buildProfile()
   const maxArtist = Math.max(1, ...artists.values())

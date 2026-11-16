@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { api, on, QUALITYS, SOURCES } from '../api'
 import Icon from '../components/Icon.vue'
 import Page from '../components/Page.vue'
+import SyncSettings from '../components/SyncSettings.vue'
 import { importLists } from '../lists'
 import { player, toggleDesktopLyric } from '../player'
 import { settings } from '../settings'
@@ -246,6 +247,8 @@ const placeLyric = (where: string) => void api('lyric.place', where)
         <button class="switch" :class="{ on: settings.showTranslation }" @click="settings.showTranslation = !settings.showTranslation" />
       </div>
     </section>
+
+    <SyncSettings />
 
     <section>
       <h2>网络</h2>

@@ -9,6 +9,7 @@ import Overlays from './components/Overlays.vue'
 import PlayerBar from './components/PlayerBar.vue'
 import QueuePanel from './components/QueuePanel.vue'
 import { createList, lists, removeList, type MyList } from './lists'
+import { addSearchHistory, clearSearchHistory, initSearchHistory, searchHistory as history } from './history'
 import { next, player, playList, prev, toggle } from './player'
 import { settings } from './settings'
 import { installUpdate, update } from './update'
@@ -46,7 +47,6 @@ const isPlayingFrom = (name: string, id?: string) => {
 const searchText = ref('')
 const searchEl = ref<HTMLInputElement | null>(null)
 const tips = ref<string[]>([])
-const history = ref<string[]>([])
 const focused = ref(false)
 const tipIndex = ref(-1)
 let tipTimer: any = null
@@ -65,8 +65,7 @@ const doSearch = (text = searchText.value) => {
   text = text.trim()
   if (!text) return
   searchText.value = text
-  history.value = [text, ...history.value.filter(h => h != text)].slice(0, 12)
-  void api('data.save', 'searchHistory', history.value)
+  addSearchHistory(text)
   focused.value = false
   searchEl.value?.blur()
   go('search', { text })
@@ -76,10 +75,7 @@ const onSearchKey = (e: KeyboardEvent) => {
   if (e.key == 'ArrowDown' && list.length) { e.preventDefault(); tipIndex.value = (tipIndex.value + 1) % list.length } else if (e.key == 'ArrowUp' && list.length) { e.preventDefault(); tipIndex.value = (tipIndex.value - 1 + list.length) % list.length } else if (e.key == 'Enter') doSearch(tipIndex.value > -1 ? list[tipIndex.value] : searchText.value)
   else if (e.key == 'Escape') searchEl.value?.blur()
 }
-const clearHistory = () => {
-  history.value = []
-  void api('data.save', 'searchHistory', [])
-}
+const clearHistory = clearSearchHistory
 
 // ---------- 我的歌单 ----------
 const newList = async() => {
@@ -127,7 +123,7 @@ onMounted(async() => {
   window.addEventListener('mouseup', onMouseNav)
   // 窗口最小化 / 收到托盘时，停掉页面上所有循环动画
   on('win:visible', (v: boolean) => document.documentElement.classList.toggle('win-hidden', !v))
-  history.value = await api<string[]>('data.load', 'searchHistory', [])
+  await initSearchHistory()
 })
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onKey)

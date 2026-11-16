@@ -1,4 +1,4 @@
-import { reactive, watch } from 'vue'
+import { nextTick, reactive, watch } from 'vue'
 import { api, on } from './api'
 
 export const settings = reactive({
@@ -34,8 +34,12 @@ const applyTheme = () => {
 }
 
 let loaded = false
+let ver = 0
+let reloading = false
 export const initSettings = async() => {
-  const saved = await api<any>('data.load', 'settings', {})
+  const r = await api<{ value: any, v: number }>('data.loadV', 'settings', {})
+  const saved = r.value
+  ver = r.v
   Object.assign(settings, saved ?? {})
   // 0.1.1 及更早的版本没有记录版本号：有旧设置但没有 lastVersion，说明是从旧版升级上来的
   if (!settings.lastVersion && saved && Object.keys(saved).length) settings.lastVersion = '0.1.1'
@@ -43,9 +47,16 @@ export const initSettings = async() => {
   media.addEventListener('change', applyTheme)
   loaded = true
   watch(() => settings.theme, applyTheme)
-  watch(settings, () => { if (loaded) void api('data.save', 'settings', settings) }, { deep: true })
-  // 主进程修改了设置（例如桌面歌词窗口被拖动）时同步过来
-  on('settings:changed', (s: any) => {
-    if (s?.desktopLyric) settings.desktopLyric = s.desktopLyric
+  watch(settings, () => { if (loaded && !reloading) void api('data.save', 'settings', settings, ver) }, { deep: true })
+  // 主进程修改了设置（桌面歌词窗口被拖动、从别的设备同步过来）时更新
+  on('settings:changed', async(s: any) => {
+    const fresh = await api<{ value: any, v: number }>('data.loadV', 'settings', {}).catch(() => null)
+    reloading = true
+    if (fresh) {
+      ver = fresh.v
+      Object.assign(settings, fresh.value ?? {})
+    } else if (s?.desktopLyric) settings.desktopLyric = s.desktopLyric
+    await nextTick()
+    reloading = false
   })
 }

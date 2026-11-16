@@ -1,6 +1,6 @@
 // 我的歌单
-import { computed, markRaw, reactive, watch } from 'vue'
-import { api, type Song } from './api'
+import { computed, markRaw, nextTick, reactive, watch } from 'vue'
+import { api, on, type Song } from './api'
 import { toast } from './ui'
 
 export interface MyList {
@@ -24,12 +24,24 @@ export const isLoved = (song: Song | null | undefined) => !!song && loveIds.valu
 
 const raw = (songs: Song[]) => songs.map(s => markRaw({ ...s, _reason: undefined, _playedAt: undefined }))
 
-export const initLists = async() => {
-  const saved = await api<MyList[]>('data.load', 'lists', [])
-  lists.splice(0, lists.length, ...(saved ?? []).map(l => ({ ...l, songs: raw(l.songs ?? []) })))
+// 版本号：歌单被同步改写过以后，拿着旧版本号的保存会被主进程拒绝（避免覆盖掉刚同步来的歌）
+let ver = 0
+let reloading = false
+const reloadLists = async() => {
+  const r = await api<{ value: MyList[], v: number }>('data.loadV', 'lists', [])
+  reloading = true
+  ver = r.v
+  lists.splice(0, lists.length, ...(r.value ?? []).map(l => ({ ...l, songs: raw(l.songs ?? []) })))
   if (!lists.some(l => l.id == 'love')) lists.unshift({ id: 'love', name: '我喜欢', songs: [], createdAt: Date.now() })
+  await nextTick()
+  reloading = false
+}
+
+export const initLists = async() => {
+  await reloadLists()
   loaded = true
-  watch(lists, () => { if (loaded) void api('data.save', 'lists', lists) }, { deep: true })
+  watch(lists, () => { if (loaded && !reloading) void api('data.save', 'lists', lists, ver) }, { deep: true })
+  on('data:changed', (key: string) => { if (key == 'lists') void reloadLists() })
 }
 
 export const getList = (id: string) => lists.find(l => l.id == id)

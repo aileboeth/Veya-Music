@@ -1,7 +1,8 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, screen, session, shell, Tray } from 'electron'
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, screen, session, shell, Tray } from 'electron'
 import fs from 'fs'
 import path from 'path'
-import { flushAll, load, save } from './store'
+import { flushAll, load, save, version as dataVersion } from './store'
+import * as sync from './sync/engine'
 import * as userApi from './userApi'
 import * as music from './music'
 import * as rec from './recommend'
@@ -233,8 +234,14 @@ const importSourceFiles = (paths: string[]) => {
 
 const api: Record<string, (...args: any[]) => any> = {
   'data.load': (key: string, def: any) => DATA_KEYS.has(key) ? load(key, def) : def,
-  'data.save': (key: string, value: any) => {
+  /** 带版本号读取：保存时带回版本号，期间被同步改写过就拒绝保存（界面会收到 data:changed 重新读取） */
+  'data.loadV': (key: string, def: any) => ({ value: DATA_KEYS.has(key) ? load(key, def) : def, v: dataVersion(key) }),
+  'data.save': (key: string, value: any, v?: number) => {
     if (!DATA_KEYS.has(key)) return
+    if (typeof v == 'number' && v < dataVersion(key)) {
+      sendMain(key == 'settings' ? 'settings:changed' : 'data:changed', key == 'settings' ? load('settings', {}) : key)
+      return { stale: true }
+    }
     save(key, value)
     if (key == 'settings') void applyProxy()
   },
@@ -326,6 +333,20 @@ const api: Record<string, (...args: any[]) => any> = {
   'update.check': () => updater.check(true),
   'update.install': updater.install,
   'update.savedNotes': updater.savedNotes,
+
+  'sync.state': sync.getState,
+  'sync.pair': sync.pair,
+  'sync.unpair': sync.unpair,
+  'sync.enable': sync.setEnabled,
+  'sync.groups': sync.setGroups,
+  'sync.rename': sync.setDeviceName,
+  'sync.now': sync.syncNow,
+  'sync.code': sync.pairCode,
+  'app.copy': (text: string) => { clipboard.writeText(String(text ?? '')) },
+  'sync.np': sync.sendNowPlaying,
+  'sync.cmd': sync.sendCommand,
+  'sync.forget': sync.forgetDevice,
+  'sync.clock': () => ({ now: sync.serverNow(), ...sync.clockInfo() }),
 
   'player.state': (state: { playing: boolean, title: string }) => {
     playState = state
@@ -423,6 +444,18 @@ if (!app.requestSingleInstanceLock()) {
     })
     dl.initDownload(tasks => sendMain('downloads:changed', tasks))
     initIpc()
+    sync.initSync({
+      version: app.getVersion(),
+      state: st => sendMain('sync:state', st),
+      data: keys => {
+        for (const key of keys) {
+          if (key == 'settings') sendMain('settings:changed', load('settings', {}))
+          else sendMain('data:changed', key)
+        }
+      },
+      np: (device, st) => sendMain('sync:np', device, st),
+      cmd: msg => sendMain('sync:cmd', msg),
+    })
     // 播放页的律动效果要读音频数据：给音频响应补上允许跨域的响应头，否则跨域音频读出来全是 0
     session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       if (details.resourceType != 'media') return callback({})

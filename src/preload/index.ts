@@ -1,6 +1,6 @@
 import { contextBridge, ipcRenderer } from 'electron'
 
-const EVENTS = new Set(['sources:changed', 'sources:speed', 'downloads:changed', 'player:command', 'settings:changed', 'lyric:visible', 'lyric:data', 'lyric:conf', 'lyric:request', 'update:state', 'app:toast', 'import:progress', 'win:visible'])
+const EVENTS = new Set(['sources:changed', 'sources:speed', 'downloads:changed', 'player:command', 'settings:changed', 'lyric:visible', 'lyric:data', 'lyric:conf', 'lyric:request', 'update:state', 'app:toast', 'import:progress', 'win:visible', 'sync:state', 'sync:np', 'sync:cmd', 'data:changed'])
 
 contextBridge.exposeInMainWorld('veya', {
   /** 返回 { ok, data } 或 { ok: false, message, details }，由渲染进程的 api() 包装成异常 */
