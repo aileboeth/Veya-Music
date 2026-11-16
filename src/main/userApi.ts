@@ -27,6 +27,8 @@ interface Runtime {
   init: Promise<void>
   pending: Map<string, { resolve: (v: any) => void, reject: (e: Error) => void, timer: NodeJS.Timeout }>
   idleTimer: NodeJS.Timeout | null
+  /** 只是为了检查更新 / 测速临时启动的：用完很快关掉，不占内存 */
+  transient: boolean
 }
 
 const runtimes = new Map<string, Runtime>()
@@ -35,6 +37,7 @@ let onChange: () => void = () => {}
 export const setOnChange = (fn: () => void) => { onChange = fn }
 
 const IDLE_CLOSE_MS = 10 * 60_000
+const TRANSIENT_CLOSE_MS = 15_000
 const HTML = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'"><title>User api</title></head><body></body></html>'
 
 const sourcesDir = () => {
@@ -147,14 +150,25 @@ const unload = async(id: string) => {
 
 const touchIdle = (id: string, rt: Runtime) => {
   if (rt.idleTimer) clearTimeout(rt.idleTimer)
-  rt.idleTimer = setTimeout(() => { void unload(id) }, IDLE_CLOSE_MS)
+  rt.idleTimer = setTimeout(() => {
+    // 还有请求没回来就再等一轮
+    if (rt.pending.size) touchIdle(id, rt)
+    else void unload(id)
+  }, rt.transient ? TRANSIENT_CLOSE_MS : IDLE_CLOSE_MS)
 }
 
-const loadScript = (meta: SourceMeta): Runtime => {
+const loadScript = (meta: SourceMeta, transient = false): Runtime => {
   const exist = runtimes.get(meta.id)
-  if (exist) return exist
+  if (exist) {
+    // 听歌要用到它了：转成常驻
+    if (!transient && exist.transient) {
+      exist.transient = false
+      touchIdle(meta.id, exist)
+    }
+    return exist
+  }
 
-  const rt: Runtime = { win: null, status: 'loading', message: '', init: Promise.resolve(), pending: new Map(), idleTimer: null }
+  const rt: Runtime = { win: null, status: 'loading', message: '', init: Promise.resolve(), pending: new Map(), idleTimer: null, transient }
   runtimes.set(meta.id, rt)
 
   rt.init = new Promise<void>((resolve) => {
@@ -230,6 +244,8 @@ const loadScript = (meta: SourceMeta): Runtime => {
     }).catch(err => finish(false, String(err?.message ?? err)))
   })
   touchIdle(meta.id, rt)
+  // 初始化可能要十几秒：临时启动的从初始化完成开始计时
+  void rt.init.then(() => { if (runtimes.get(meta.id) === rt) touchIdle(meta.id, rt) })
   onChange()
   return rt
 }
@@ -281,7 +297,7 @@ export const checkUpdates = () => {
     const ids = getList().filter(m => m.enabled).map(m => m.id)
     let i = 0
     await Promise.all(Array.from({ length: 3 }, async() => {
-      while (i < ids.length) await ensure(ids[i++]).catch(() => {})
+      while (i < ids.length) await ensure(ids[i++], true).catch(() => {})
     }))
     // 更新提示通常在初始化之后才发出，稍等一下
     await new Promise(resolve => setTimeout(resolve, 6000))
@@ -321,10 +337,10 @@ export const warmup = () => {
 }
 
 /** 确保脚本已初始化；成功返回空字符串，失败返回原因 */
-export const ensure = async(id: string) => {
+export const ensure = async(id: string, transient = false) => {
   const meta = getList().find(m => m.id == id)
   if (!meta) return '音源不存在'
-  const rt = loadScript(meta)
+  const rt = loadScript(meta, transient)
   await rt.init
   return rt.status == 'ready' ? '' : (rt.message || '初始化失败')
 }
@@ -336,10 +352,10 @@ export const reload = async(id: string) => {
   await loadScript(meta).init
 }
 
-export const request = async(id: string, data: { source: string, action: string, info: any }, timeout = 20_000) => {
+export const request = async(id: string, data: { source: string, action: string, info: any }, timeout = 20_000, transient = false) => {
   const meta = getList().find(m => m.id == id)
   if (!meta) throw new Error('音源不存在')
-  const rt = loadScript(meta)
+  const rt = loadScript(meta, transient)
   await rt.init
   if (rt.status != 'ready' || !rt.win || rt.win.isDestroyed()) throw new Error(rt.message || '音源初始化失败')
   touchIdle(id, rt)

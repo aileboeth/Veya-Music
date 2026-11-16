@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch, type Component } from 'vue'
-import { api } from './api'
+import { api, on } from './api'
 import logo from './assets/logo.svg'
 import Icon from './components/Icon.vue'
 import NowPlaying from './components/NowPlaying.vue'
@@ -125,6 +125,8 @@ const onMouseNav = (e: MouseEvent) => {
 onMounted(async() => {
   window.addEventListener('keydown', onKey)
   window.addEventListener('mouseup', onMouseNav)
+  // 窗口最小化 / 收到托盘时，停掉页面上所有循环动画
+  on('win:visible', (v: boolean) => document.documentElement.classList.toggle('win-hidden', !v))
   history.value = await api<string[]>('data.load', 'searchHistory', [])
 })
 onBeforeUnmount(() => {
@@ -134,7 +136,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app">
+  <div class="app" :class="{ 'np-open': player.showNowPlaying && !!player.song }">
     <aside class="sidebar">
       <div class="brand">
         <img :src="logo" alt="" />
@@ -208,6 +210,8 @@ onBeforeUnmount(() => {
 <style scoped>
 .app { position: relative; height: 100%; display: grid; grid-template-columns: 216px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; }
 .bar { grid-column: 1 / -1; }
+/* 播放页盖住主界面之后（等上滑动画结束），主界面不再绘制，下面的跳动图标也不再空转 */
+.app.np-open > .sidebar, .app.np-open > main { visibility: hidden; transition: visibility 0s .36s; }
 .sidebar { display: flex; flex-direction: column; padding: 0 10px 10px; background: var(--panel); border-right: 1px solid var(--border); min-height: 0; -webkit-app-region: drag; }
 .sidebar button { -webkit-app-region: no-drag; }
 .brand { height: 64px; display: flex; align-items: center; gap: 6px; padding: 6px 8px 0; font-size: 19px; font-weight: 700; letter-spacing: .3px; flex: none; }

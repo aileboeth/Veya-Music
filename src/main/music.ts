@@ -427,7 +427,7 @@ export const speedTest = async() => {
     await Promise.all(scripts.map(async meta => {
       const row: Record<string, SpeedCell> = results[meta.id] = {}
       // 先完成初始化，避免把脚本启动的时间算进第一个平台的耗时里
-      const initError = await userApi.ensure(meta.id)
+      const initError = await userApi.ensure(meta.id, true)
       for (const { id: source } of SOURCES) {
         const supported = userApi.getList().find(m => m.id == meta.id)?.sources
         if (!initError && supported && !supported[source]?.actions.includes('musicUrl')) {
@@ -440,7 +440,7 @@ export const speedTest = async() => {
             const quality = pickQualitys(song, preferred, supported?.[source]?.qualitys)[0] ?? '128k'
             const t0 = Date.now()
             try {
-              const r = await userApi.request(meta.id, { source, action: 'musicUrl', info: { type: quality, musicInfo: { ...song, typeUrl: {} } } }, 12_000)
+              const r = await userApi.request(meta.id, { source, action: 'musicUrl', info: { type: quality, musicInfo: { ...song, typeUrl: {} } } }, 12_000, true)
               if (!r?.data?.url) throw new Error('未返回链接')
               const ms = Date.now() - t0
               const kbps = await probeUrl(r.data.url)

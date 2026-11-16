@@ -159,3 +159,6 @@ select.input { padding-right: 8px; }
 .list-hero .hero-desc { font-size: 13px; color: var(--text2); line-height: 1.6; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: pre-line; user-select: text; }
 .list-hero .hero-btns { display: flex; gap: 10px; margin-top: 6px; flex-wrap: wrap; }
 .center-box { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 80px 20px; color: var(--text3); }
+
+/* 窗口看不见（最小化 / 收到托盘）时停掉所有循环动画 */
+html.win-hidden *, html.win-hidden *::before, html.win-hidden *::after { animation-play-state: paused !important; }

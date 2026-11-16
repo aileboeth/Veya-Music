@@ -70,6 +70,9 @@ const createMainWindow = () => {
       mainWin?.hide()
     }
   })
+  // 窗口看不见的时候（最小化 / 收到托盘）通知页面停掉律动和动画，省 CPU 和显卡
+  const tellVisible = () => sendMain('win:visible', !!mainWin && mainWin.isVisible() && !mainWin.isMinimized())
+  for (const name of ['show', 'hide', 'minimize', 'restore'] as const) mainWin.on(name as any, tellVisible)
   mainWin.on('closed', () => {
     mainWin = null
     if (!quitting) app.quit()

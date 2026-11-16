@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // 全屏播放页：大封面 + 滚动歌词（逐字填色、远处的句子虚化、间奏圆点）
 import { computed, nextTick, ref, watch } from 'vue'
-import { qualityName, sourceName, thumb } from '../api'
+import { on, qualityName, sourceName, thumb } from '../api'
 import { isLoved, toggleLove } from '../lists'
 import { getTime, player, seek, startRadio } from '../player'
 import { settings } from '../settings'
@@ -23,6 +23,10 @@ const coverSize = computed(() => np.value.layout == 'center' ? 176 : np.value.vi
 const ring = computed(() => np.value.visual == 'ring')
 /** 唱过的字用纯白点亮（页面底色是封面的颜色，白字最清楚） */
 const WHITE = ['#ffffff', '#ffffff']
+
+/** 主窗口看得见吗（最小化 / 收到托盘时停掉律动和动画） */
+const winVisible = ref(true)
+on('win:visible', (v: boolean) => { winVisible.value = v })
 
 const lyricEl = ref<HTMLElement | null>(null)
 let userScrollAt = 0
@@ -46,19 +50,25 @@ const gaps = computed(() => {
   })
   return map
 })
-const gapOn = (i: number) => {
-  const g = gaps.value.get(i)
-  return !!g && player.time >= g.from + 0.3 && player.time < g.to - 0.2
-}
-const dot = (i: number, n: number) => {
-  const g = gaps.value.get(i)!
-  const v = Math.min(1, Math.max(0, (player.time - g.from) / (g.to - g.from) * 3 - n))
-  return { opacity: 0.25 + 0.75 * v, transform: `scale(${0.8 + 0.3 * v})` }
-}
+/** 现在正处在哪一段间奏里（没有就是 -1）。单独算出来，页面只在进出间奏时才重画，而不是每次进度变化都重画整页歌词 */
+const activeGap = computed(() => {
+  for (const [i, g] of gaps.value) if (player.time >= g.from + 0.3 && player.time < g.to - 0.2) return i
+  return -1
+})
+const dotStyles = computed(() => {
+  const g = gaps.value.get(activeGap.value)
+  if (!g) return []
+  return [0, 1, 2].map(n => {
+    const v = Math.min(1, Math.max(0, (player.time - g.from) / (g.to - g.from) * 3 - n))
+    return { opacity: (0.25 + 0.75 * v).toFixed(2), transform: `scale(${(0.8 + 0.3 * v).toFixed(2)})` }
+  })
+})
 /** 离正在唱的那一句越远越虚 */
 const lineStyle = (i: number) => {
   const d = Math.abs(i - player.lyricIndex)
   if (!d || browsing.value || player.lyricIndex < 0) return {}
+  // 隔得远的句子本来就在屏幕外：只调淡，不做虚化（每个虚化的句子都要占一块显存）
+  if (d > 7) return { opacity: '0.22' }
   return { filter: `blur(${Math.min(3.2, d * 0.7).toFixed(1)}px)`, opacity: String(Math.max(0.22, 0.62 - d * 0.1)) }
 }
 
@@ -69,7 +79,12 @@ const scrollToCurrent = (smooth = true) => {
   if (!line) return
   box.scrollTo({ top: line.offsetTop - box.clientHeight * 0.42 + line.clientHeight / 2, behavior: smooth ? 'smooth' : 'auto' })
 }
-watch(() => player.lyricIndex, () => void nextTick(() => scrollToCurrent()))
+watch(() => [player.lyricIndex, activeGap.value], () => void nextTick(() => scrollToCurrent()))
+// 换布局 / 律动效果后歌词框的大小变了：重新对准正在唱的那一句
+watch(() => [settings.nowPlaying.layout, settings.nowPlaying.visual, winVisible.value], () => {
+  userScrollAt = 0
+  void nextTick(() => scrollToCurrent(false))
+})
 watch(() => [player.showNowPlaying, player.lyric], () => {
   userScrollAt = 0
   browsing.value = false
@@ -91,7 +106,7 @@ const searchSinger = () => {
 
 <template>
   <Transition name="rise">
-    <div v-if="player.showNowPlaying && player.song" class="now">
+    <div v-if="player.showNowPlaying && player.song" class="now" :class="{ frozen: !winVisible }">
       <div class="bg" :style="player.cover ? { backgroundImage: `url(${thumb(player.cover, 300)})` } : {}" />
       <div class="scrim" />
       <!-- 两团慢慢漂的彩色光：给玻璃面板后面一点可以「透」出来的东西 -->
@@ -104,12 +119,12 @@ const searchSinger = () => {
         <button class="pill" title="切换律动效果：环形 / 波浪音符 / 频谱 / 关闭" @click="cycle('visual', ['ring', 'wave', 'bars', 'off'])">{{ VISUAL_NAME[np.visual] }}</button>
       </header>
       <!-- 波浪 / 频谱铺在页面底部 -->
-      <div v-if="np.visual == 'wave' || np.visual == 'bars'" class="viz-bottom" :class="np.visual"><Visualizer :type="np.visual" :playing="player.playing" /></div>
+      <div v-if="np.visual == 'wave' || np.visual == 'bars'" class="viz-bottom" :class="np.visual"><Visualizer :type="np.visual" :playing="player.playing" :frozen="!winVisible" /></div>
       <div class="content" :class="['l-' + np.layout, { ring }]">
         <div class="left">
           <div class="cover-wrap" :style="{ width: coverSize + 'px', height: coverSize + 'px' }">
             <!-- 环形律动围着封面转 -->
-            <div v-if="ring" class="viz-ring"><Visualizer type="ring" :playing="player.playing" :radius="coverSize / 2" /></div>
+            <div v-if="ring" class="viz-ring"><Visualizer type="ring" :playing="player.playing" :radius="coverSize / 2" :frozen="!winVisible" /></div>
             <Cover class="big-cover" :class="{ playing: player.playing, round: ring }" :src="player.cover" :text="player.song.name" :size="coverSize" :radius="ring ? coverSize / 2 : 22" :px="500" />
           </div>
           <div class="name">{{ player.song.name }}</div>
@@ -131,15 +146,15 @@ const searchSinger = () => {
             <template v-if="player.lyric.length">
               <div class="pad" />
               <template v-for="(line, i) in player.lyric" :key="i">
-                <div v-if="gaps.has(i)" class="gap" :class="{ on: gapOn(i) }">
-                  <div class="dots"><i v-for="n in 3" :key="n" :style="gapOn(i) ? dot(i, n - 1) : {}" /></div>
+                <div v-if="gaps.has(i)" class="gap" :class="{ on: i == activeGap }">
+                  <div class="dots"><i v-for="n in 3" :key="n" :style="i == activeGap ? dotStyles[n - 1] : {}" /></div>
                 </div>
                 <div
                   class="line" :class="{ on: i == player.lyricIndex, past: i < player.lyricIndex }" :style="lineStyle(i)"
                   title="点击跳转到这一句" @click="userScrollAt = 0; browsing = false; seek(line.time)"
                 >
                   <div class="txt">
-                    <KaraokeLine :text="line.text" :words="line.words" :start="line.time" :dur="line.dur" :active="i == player.lyricIndex" :get-time="getTime" :stops="WHITE" />
+                    <KaraokeLine :text="line.text" :words="line.words" :start="line.time" :dur="line.dur" :active="i == player.lyricIndex && winVisible" :get-time="getTime" :stops="WHITE" />
                   </div>
                   <div v-if="line.trans && settings.showTranslation" class="trans">{{ line.trans }}</div>
                 </div>
@@ -196,7 +211,8 @@ header .pill:hover { color: var(--accent); background: var(--panel-strong); }
 .acts .icon-btn:hover { background: var(--panel-strong); color: var(--accent); }
 .acts .loved { color: #ff4d6d; }
 .right { min-width: 0; min-height: 0; display: flex; }
-.lyric { flex: 1; overflow-y: auto; text-align: left; padding: 0 12px 0 8px; mask-image: linear-gradient(180deg, transparent 0, #000 14%, #000 82%, transparent 100%); scrollbar-width: none; }
+/* position: relative 不能少：滚动位置按「句子相对歌词框的偏移」来算，没有它偏移会从整页算起，封面居中时歌词就跟不上 */
+.lyric { position: relative; flex: 1; overflow-y: auto; text-align: left; padding: 0 12px 0 8px; mask-image: linear-gradient(180deg, transparent 0, #000 14%, #000 82%, transparent 100%); scrollbar-width: none; }
 .lyric::-webkit-scrollbar { display: none; }
 .pad { height: 42%; }
 .line {
@@ -228,9 +244,10 @@ header .pill:hover { color: var(--accent); background: var(--panel-strong); }
 }
 .bg { opacity: 1; filter: blur(58px) saturate(1.95) brightness(0.9); }
 .scrim { background: linear-gradient(180deg, rgba(8, 10, 24, 0.08), rgba(8, 10, 24, 0.3)); }
-.orb { position: absolute; width: 44vw; height: 44vw; border-radius: 50%; filter: blur(80px); opacity: .34; mix-blend-mode: screen; pointer-events: none; }
-.orb.a { left: -10vw; top: -16vw; background: radial-gradient(circle, #46d6f0 0%, transparent 66%); animation: drift-a 26s ease-in-out infinite alternate; }
-.orb.b { right: -12vw; bottom: -18vw; background: radial-gradient(circle, #9a5cff 0%, transparent 66%); animation: drift-b 32s ease-in-out infinite alternate; }
+/* 光团本身就是往外淡出的渐变，不再另外加模糊滤镜（两块半个窗口大的模糊图层很占显存） */
+.orb { position: absolute; width: 56vw; height: 56vw; border-radius: 50%; opacity: .34; mix-blend-mode: screen; pointer-events: none; }
+.orb.a { left: -10vw; top: -16vw; background: radial-gradient(circle, #46d6f0 0%, rgba(70, 214, 240, 0.45) 30%, transparent 68%); animation: drift-a 26s ease-in-out infinite alternate; }
+.orb.b { right: -12vw; bottom: -18vw; background: radial-gradient(circle, #9a5cff 0%, rgba(154, 92, 255, 0.45) 30%, transparent 68%); animation: drift-b 32s ease-in-out infinite alternate; }
 @keyframes drift-a { to { transform: translate(16vw, 12vw) scale(1.15); } }
 @keyframes drift-b { to { transform: translate(-18vw, -10vw) scale(0.9); } }
 .sheet {
@@ -254,4 +271,6 @@ header .pill:hover { color: #fff; background: rgba(255, 255, 255, 0.22); }
 .line.on { --dim: rgba(255, 255, 255, 0.4); }
 .dots i { background: #fff; }
 .l-center .right { margin-bottom: 4px; }
+/* 窗口看不见时所有动画都停下 */
+.now.frozen .orb, .now.frozen .big-cover, .now.frozen .dots { animation-play-state: paused !important; }
 </style>

@@ -8,7 +8,9 @@ const props = withDefaults(defineProps<{
   playing: boolean
   /** 环形：内圈半径（封面的半径） */
   radius?: number
-}>(), { radius: 150 })
+  /** 窗口看不见时完全停下 */
+  frozen?: boolean
+}>(), { radius: 150, frozen: false })
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 const BANDS = 48
@@ -24,6 +26,8 @@ interface Note { x: number, y: number, vy: number, sway: number, life: number, g
 const notes: Note[] = []
 const GLYPHS = ['♪', '♫', '♩', '♬']
 
+/** 用 CPU 画（willReadFrequently）：画布不大，CPU 画很轻；走显卡的话每帧新建的渐变会把显卡缓存撑到近百 MB */
+const getCtx = () => canvas.value?.getContext('2d', { willReadFrequently: true }) ?? null
 const resize = () => {
   const el = canvas.value
   if (!el) return
@@ -32,7 +36,7 @@ const resize = () => {
   h = el.clientHeight
   el.width = Math.round(w * dpr)
   el.height = Math.round(h * dpr)
-  el.getContext('2d')!.setTransform(dpr, 0, 0, dpr, 0, 0)
+  getCtx()!.setTransform(dpr, 0, 0, dpr, 0, 0)
 }
 
 /** 把 256 个频点按对数分成 48 段（低频分得细），并做一点平滑 */
@@ -53,7 +57,7 @@ const updateLevels = (t: number) => {
       // 读不到音频数据时（极少数情况）：用一个平缓的假动画顶着，不至于一片死寂
       target = 0.22 + 0.16 * Math.sin(t / 420 + i * 0.55) + 0.1 * Math.sin(t / 170 + i * 1.3)
     }
-    levels[i] += (target - levels[i]) * (target > levels[i] ? 0.5 : 0.14)
+    levels[i] += (target - levels[i]) * (target > levels[i] ? 0.75 : 0.26)
   }
 }
 const band = (from: number, to: number) => {
@@ -138,7 +142,7 @@ const drawWave = (ctx: CanvasRenderingContext2D, t: number) => {
     ctx.fill()
   }
   // 踩到鼓点时，从浪尖上冒出一个音符往上飘
-  bassAvg += (bass - bassAvg) * 0.04
+  bassAvg += (bass - bassAvg) * 0.08
   if (props.playing && bass > 0.3 && bass > bassAvg * 1.22 && t - lastBeat > 320 && notes.length < 26) {
     lastBeat = t
     const x = w * (0.06 + Math.random() * 0.88)
@@ -147,9 +151,9 @@ const drawWave = (ctx: CanvasRenderingContext2D, t: number) => {
   ctx.textAlign = 'center'
   for (let i = notes.length - 1; i >= 0; i--) {
     const n = notes[i]
-    n.y -= n.vy
-    n.life -= 0.0085
-    n.sway += 0.045
+    n.y -= n.vy * 2
+    n.life -= 0.017
+    n.sway += 0.09
     if (n.life <= 0 || n.y < -20) { notes.splice(i, 1); continue }
     ctx.font = `${n.size}px 'Segoe UI Symbol', sans-serif`
     ctx.fillStyle = `hsla(${n.hue}, 90%, 62%, ${Math.min(1, n.life * 1.6) * 0.75})`
@@ -157,24 +161,38 @@ const drawWave = (ctx: CanvasRenderingContext2D, t: number) => {
   }
 }
 
+let idleFrames = 0
+let lastDraw = 0
 const frame = (t: number) => {
-  raf = requestAnimationFrame(frame)
-  const ctx = canvas.value?.getContext('2d')
-  if (!ctx || !w || !h) return
-  updateLevels(t)
-  ctx.clearRect(0, 0, w, h)
-  if (props.type == 'ring') drawRing(ctx, t)
-  else if (props.type == 'bars') drawBars(ctx)
-  else drawWave(ctx, t)
+  raf = 0
+  // 每秒画 30 次就够顺了（上面的平滑系数、音符速度都是按 30 次调的），比跟着屏幕刷新率画省一半
+  if (t - lastDraw < 30) { raf = requestAnimationFrame(frame); return }
+  lastDraw = t
+  const ctx = getCtx()
+  if (ctx && w && h) {
+    updateLevels(t)
+    ctx.clearRect(0, 0, w, h)
+    if (props.type == 'ring') drawRing(ctx, t)
+    else if (props.type == 'bars') drawBars(ctx)
+    else drawWave(ctx, t)
+  }
+  // 暂停后等画面落回静止（约 1.5 秒）就不再画了，继续播放时再启动
+  idleFrames = props.playing ? 0 : idleFrames + 1
+  if (!props.frozen && (props.playing || idleFrames < 45 || notes.length)) raf = requestAnimationFrame(frame)
+}
+const start = () => {
+  idleFrames = 0
+  if (!raf && !props.frozen) raf = requestAnimationFrame(frame)
 }
 
 onMounted(() => {
   resize()
-  ro = new ResizeObserver(resize)
+  ro = new ResizeObserver(() => { resize(); start() })
   if (canvas.value) ro.observe(canvas.value)
-  raf = requestAnimationFrame(frame)
+  start()
 })
-watch(() => props.type, () => { notes.length = 0 })
+watch(() => props.type, () => { notes.length = 0; start() })
+watch(() => [props.playing, props.frozen], start)
 onBeforeUnmount(() => {
   cancelAnimationFrame(raf)
   ro?.disconnect()

@@ -88,7 +88,7 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 </script>
 
 <template>
-  <span ref="root" class="kl" :class="{ scroll }">
+  <span ref="root" class="kl" :class="{ scroll, live: active && effect != 'none' }">
     <span ref="inner" class="in"><span v-for="(u, i) in units" :key="i" class="u" :style="{ '--c': colors[i] }">{{ u.s }}</span></span>
   </span>
 </template>
@@ -98,8 +98,10 @@ onBeforeUnmount(() => cancelAnimationFrame(raf))
 .kl.scroll .in { display: inline-block; padding: 0 4px; }
 .u {
   --p: 0;
-  display: inline-block; white-space: pre; transform-origin: 50% 85%; will-change: transform;
+  display: inline-block; white-space: pre; transform-origin: 50% 85%;
   background-image: linear-gradient(90deg, var(--c) calc(var(--p) * 124% - 24%), var(--dim, rgba(255, 255, 255, 0.6)) calc(var(--p) * 124%));
   -webkit-background-clip: text; background-clip: text; color: transparent;
 }
+/* 只有正在唱的这一句需要独立图层；每个字都常驻一个图层的话，一首歌要多占几百个显卡图层 */
+.kl.live .u { will-change: transform; }
 </style>
