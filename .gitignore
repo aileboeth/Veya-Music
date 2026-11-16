@@ -3,3 +3,7 @@ out/
 dist/
 .e2e/
 *.log
+
+# 带个人 KEY 的音源脚本（申请页下载的专属版本），绝不提交
+sources/Hei Music.js
+sources/*.private.js
