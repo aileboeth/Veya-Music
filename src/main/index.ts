@@ -443,6 +443,7 @@ if (!app.requestSingleInstanceLock()) {
       sendMain('sources:speed', music.getSpeedState())
     })
     dl.initDownload(tasks => sendMain('downloads:changed', tasks))
+    music.setLocalLookup(dl.localFileOf)
     initIpc()
     sync.initSync({
       version: app.getVersion(),

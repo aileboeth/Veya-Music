@@ -357,7 +357,16 @@ export const findOtherSources = (song: any) => cached(`other_${song.id}`, 6 * 60
 /**
  * 获取播放链接：依次尝试各音源脚本 → 都失败则自动换到其他平台的同一首歌
  */
-export const getMusicUrl = async(song: any, preferred = '320k', opts: { refresh?: boolean, allowSwitch?: boolean, exclude?: string[] } = {}) => {
+/** 已下载的歌曲：返回本地文件（由 index / 手机版宿主注册，避免和下载模块互相引用） */
+let localLookup: (song: any) => { url: string, quality: string } | null = () => null
+export const setLocalLookup = (fn: typeof localLookup) => { localLookup = fn }
+
+export const getMusicUrl = async(song: any, preferred = '320k', opts: { refresh?: boolean, allowSwitch?: boolean, exclude?: string[], noLocal?: boolean } = {}) => {
+  // 下载过的歌直接放本地文件（没网也能听）；播放出错重试时（exclude 里有 local）才去取在线链接
+  if (!opts.noLocal && !opts.exclude?.some(e => e.startsWith('local|'))) {
+    const local = localLookup(song)
+    if (local) return { url: local.url, quality: local.quality, scriptId: 'local', scriptName: '本地下载', switched: false, song }
+  }
   const cacheKey = `${song.id}_${preferred}`
   const hit = urlCache.get(cacheKey)
   if (!opts.refresh && hit && Date.now() - hit.t < 20 * MIN) return hit.v

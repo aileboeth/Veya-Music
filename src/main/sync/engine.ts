@@ -436,7 +436,7 @@ export const parsePairCode = (code: string) => {
   const m = /veya1\.([\w-]+)/.exec(String(code ?? '').trim())
   if (!m) throw new Error('配对码格式不对：应该是 veya1. 开头的一整行（在服务器上运行 veya-sync info 查看）')
   let p: any
-  try { p = JSON.parse(Buffer.from(m[1], 'base64url').toString('utf8')) } catch { throw new Error('配对码不完整，请重新复制一整行') }
+  try { p = JSON.parse(Buffer.from(m[1].replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8')) } catch { throw new Error('配对码不完整，请重新复制一整行') }
   if (!/^https?:\/\/[^\s/]+$/.test(p?.u ?? '') || typeof p.k != 'string' || p.k.length < 16) throw new Error('配对码内容不对')
   return { url: p.u as string, key: p.k as string, fp: (p.f as string) || undefined, name: (p.n as string) || '' }
 }
@@ -542,7 +542,7 @@ export const pairCode = () => {
   const p: any = { u: conf.url, k: conf.key }
   if (conf.fp) p.f = conf.fp
   if (conf.server) p.n = conf.server
-  return 'veya1.' + Buffer.from(JSON.stringify(p)).toString('base64url')
+  return 'veya1.' + Buffer.from(JSON.stringify(p)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
 }
 
 /** 上报「正在播放」 */

@@ -4,6 +4,8 @@ import { api, formatTime, on, qualityName, type Song } from './api'
 import { settings } from './settings'
 import { toast } from './ui'
 import { buildLyric, type LyricLine } from './lyricFx'
+import { isAndroid } from './platform'
+import { NativeAudio } from './nativeAudio'
 
 export interface QueueSource { type: string, name: string, route?: { name: string, params: Record<string, any> } }
 export type { LyricLine }
@@ -29,7 +31,9 @@ export const player = reactive({
   lyricWindow: false,
 })
 
-const audio = new Audio()
+// 手机版：原生播放器（后台、锁屏、通知栏都能控制），接口和 audio 元素一样
+const nativeAudio = isAndroid ? new NativeAudio((window as any).__veyaNativePlayer) : null
+const audio: HTMLAudioElement = (nativeAudio as any) ?? new Audio()
 audio.preload = 'auto'
 // 律动效果要读音频数据，跨域的音频必须按 CORS 方式加载（主进程会给音频响应补上允许跨域的响应头）
 audio.crossOrigin = 'anonymous'
@@ -92,6 +96,7 @@ const loadLyric = async(song: Song, tk: number) => {
     if (tk != token) return
     player.lyric = markRaw(buildLyric(data))
     player.lyricState = player.lyric.length ? '' : 'none'
+    if (isAndroid) sendLinesToNative()
   } catch {
     if (tk == token) player.lyricState = 'none'
   }
@@ -137,6 +142,12 @@ const pushDesktopLyric = () => {
     trans: settings.showTranslation ? (line?.trans ?? '') : '',
     next: next?.text ?? '',
   }).catch(() => {})
+}
+
+/** 手机版：整首歌词交给原生层，悬浮歌词和锁屏歌词在后台也能自己跟着走 */
+const sendLinesToNative = () => {
+  const lines = player.lyric.map(l => ({ t: l.time, d: l.dur, x: l.text, r: settings.showTranslation ? (l.trans ?? '') : '', w: l.words?.map(w => [w.t, w.d, w.s]) ?? null }))
+  void api('lyric.lines', { id: player.song?.id ?? '', lines }).catch(() => {})
 }
 
 // ---------------- 听歌记录 ----------------
@@ -231,6 +242,7 @@ audio.addEventListener('playing', () => {
   if (!started && player.song) {
     started = true
     void api('stats.record', player.song, 'play', player.source?.type)
+    if (nativeAudio) void prefetchNext()
   }
   syncState()
 })
@@ -285,6 +297,76 @@ audio.addEventListener('error', () => {
   }
   onPlayFail('音频加载失败')
 })
+
+// ---------------- 手机版：预加载下一首 ----------------
+// 页面切到后台后定时器会被系统限速；提前把下一首的链接交给原生播放器，放完直接接上，不用等页面
+let prefetched: { index: number, song: Song, info: any } | null = null
+let prefetchToken = 0
+const predictNextIndex = () => {
+  const len = player.queue.length
+  if (!len || settings.playMode == 'single') return -1
+  if (settings.playMode == 'shuffle') {
+    if (len < 2) return -1
+    let idx = player.index
+    while (idx == player.index) idx = Math.floor(Math.random() * len)
+    return idx
+  }
+  if (player.index + 1 < len) return player.index + 1
+  return settings.playMode == 'loop' ? 0 : -1
+}
+const prefetchNext = async() => {
+  if (!nativeAudio) return
+  const tk = ++prefetchToken
+  prefetched = null
+  nativeAudio.setNext(null)
+  const index = predictNextIndex()
+  const song = player.queue[index]
+  if (!song) return
+  try {
+    const info = await api('music.url', song, settings.quality, { allowSwitch: settings.autoSwitchSource })
+    if (tk != prefetchToken || player.queue[index]?.id != song.id) return
+    prefetched = { index, song, info }
+    nativeAudio.setNext({ url: info.url, id: song.id, meta: metaOf(song) })
+  } catch {}
+}
+nativeAudio?.addEventListener('advanced', () => {
+  const pf = prefetched
+  prefetched = null
+  if (!pf) return
+  settleStats(false, true)
+  if (settings.playMode == 'shuffle' && player.index > -1) shuffleHistory.push(player.index)
+  // 和 loadSong 一样更新状态，但不再请求链接、也不动播放器（原生层已经在放了）
+  const tk = ++token
+  wantPlay = true
+  mismatchScripts = []
+  mismatchFallback = null
+  listened = 0
+  errorRetries = 0
+  player.index = pf.index
+  player.song = pf.song
+  player.info = pf.info
+  player.time = 0
+  player.duration = parseInterval(pf.song.interval)
+  player.cover = pf.song.img ?? ''
+  void loadLyric(pf.song, tk)
+  if (!pf.song.img) {
+    void api<string>('music.pic', pf.song).then(url => {
+      if (tk == token && url) {
+        pf.song.img = url
+        player.cover = url
+        updateMediaSession()
+      }
+    }).catch(() => {})
+  }
+  updateMediaSession()
+  // 原生播放器一直在放，不会再有 playing 事件：这里直接记一次播放，并预加载再下一首
+  started = true
+  void api('stats.record', pf.song, 'play', player.source?.type)
+  syncState()
+  void prefetchNext()
+})
+// 队列、播放模式变了：重新预加载
+watch(() => [settings.playMode, player.queue.length, player.index], () => { if (nativeAudio && started) void prefetchNext() })
 
 const playIndex = (index: number, autoplay = true) => {
   const song = player.queue[index]
@@ -499,7 +581,12 @@ export const setQuality = (quality: string) => {
 export const toggleDesktopLyric = () => void api('lyric.toggle')
 
 // ---------------- 系统集成 ----------------
+const metaOf = (song: Song) => ({ title: song.name, artist: song.singer, album: song.albumName, artwork: song.img ?? '' })
 const updateMediaSession = () => {
+  if (nativeAudio) {
+    if (player.song) nativeAudio.setMeta({ ...metaOf(player.song), artwork: player.cover || player.song.img || '' })
+    return
+  }
   if (!('mediaSession' in navigator)) return
   const song = player.song
   navigator.mediaSession.metadata = song
@@ -557,7 +644,7 @@ export const initPlayer = async() => {
   }
   on('player:command', (cmd: string) => {
     if (cmd == 'toggle') toggle()
-    else if (cmd == 'next') void next()
+    else if (cmd == 'play') { if (!player.playing) toggle() } else if (cmd == 'pause') { if (player.playing) toggle() } else if (cmd == 'next') void next()
     else if (cmd == 'prev') prev()
   })
   player.lyricWindow = await api<boolean>('lyric.visible')

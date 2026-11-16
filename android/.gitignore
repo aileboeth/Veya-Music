@@ -1,0 +1,13 @@
+.gradle/
+.kotlin/
+build/
+local.properties
+.idea/
+*.iml
+captures/
+# 打包进 APK 的网页（由 npm run build:android 生成）
+app/src/main/assets/www/
+# 签名文件绝不进仓库
+*.jks
+*.keystore
+keystore.properties

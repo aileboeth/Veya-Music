@@ -1,12 +1,7 @@
-// 歌曲下载：按所选音质取链接 → 流式写入文件，可同时保存 .lrc 歌词
-import { app } from 'electron'
-import fs from 'fs'
-import path from 'path'
-import http from 'http'
-import https from 'https'
+// 歌曲下载：按所选音质取链接 → 保存文件（读写见 downloadIO），可同时保存 .lrc 歌词
 import { getLyric, getMusicUrl } from './music'
 import { load, save } from './store'
-import { agentFor } from './net'
+import * as io from './downloadIO'
 
 export interface DownloadTask {
   id: string
@@ -26,7 +21,7 @@ const aborts = new Map<string, () => void>()
 let notify: (tasks: DownloadTask[]) => void = () => {}
 let running = 0
 const MAX_RUNNING = 3
-let notifyTimer: NodeJS.Timeout | null = null
+let notifyTimer: ReturnType<typeof setTimeout> | null = null
 
 export const initDownload = (onUpdate: (tasks: DownloadTask[]) => void) => {
   notify = onUpdate
@@ -46,7 +41,15 @@ const emit = (immediate = false) => {
 }
 
 export const getTasks = () => tasks
-export const defaultDir = () => path.join(app.getPath('music'), 'Veya Music')
+export const defaultDir = io.defaultDir
+
+/** 已经下载好的这首歌（文件还在）：播放时优先用本地文件，没网也能听 */
+export const localFileOf = (song: any) => {
+  if (!song?.id) return null
+  const t = tasks.find(t => t.status == 'done' && t.song?.id == song.id && t.filePath)
+  if (!t || !io.fileExists(t.filePath)) return null
+  return { url: io.playableUrl(t.filePath), quality: t.quality, filePath: t.filePath }
+}
 
 const safeName = (name: string) => name.replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 120)
 const extOf = (url: string, quality: string) => {
@@ -55,92 +58,41 @@ const extOf = (url: string, quality: string) => {
   return quality.startsWith('flac') ? 'flac' : 'mp3'
 }
 
-const sniffExt = (file: string) => {
-  try {
-    const fd = fs.openSync(file, 'r')
-    const b = Buffer.alloc(12)
-    fs.readSync(fd, b, 0, 12, 0)
-    fs.closeSync(fd)
-    const tag = b.toString('latin1', 0, 4)
-    if (b.toString('latin1', 4, 8) == 'ftyp') return 'm4a'
-    if (tag == 'fLaC') return 'flac'
-    if (tag == 'OggS') return 'ogg'
-    if (tag == 'RIFF') return 'wav'
-    if (tag.startsWith('ID3') || (b[0] == 0xff && (b[1] & 0xe0) == 0xe0)) return 'mp3'
-  } catch {}
-  return ''
-}
-
-const fetchToFile =(url: string, file: string, task: DownloadTask, redirects = 0): Promise<void> => new Promise((resolve, reject) => {
-  const req = (url.startsWith('https') ? https : http).get(url, {
-    headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120 Safari/537.36' },
-    timeout: 30_000,
-    agent: agentFor(url),
-  }, res => {
-    if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location && redirects < 5) {
-      res.resume()
-      fetchToFile(new URL(res.headers.location, url).href, file, task, redirects + 1).then(resolve, reject)
-      return
-    }
-    if (res.statusCode != 200) {
-      res.resume()
-      reject(new Error(`服务器返回 ${res.statusCode}`))
-      return
-    }
-    task.total = Number(res.headers['content-length'] ?? 0)
-    const out = fs.createWriteStream(file)
-    res.on('data', chunk => {
-      task.downloaded += chunk.length
-      task.progress = task.total ? task.downloaded / task.total : 0
-      emit()
-    })
-    res.pipe(out)
-    out.on('finish', () => resolve())
-    out.on('error', reject)
-    res.on('error', reject)
-  })
-  req.on('timeout', () => req.destroy(new Error('下载超时')))
-  req.on('error', reject)
-  aborts.set(task.id, () => req.destroy(new Error('已取消')))
-})
-
 const runTask = async(task: DownloadTask) => {
   const settings = load<any>('settings', {})
   const dir = settings.downloadDir || defaultDir()
-  let tmp = ''
   try {
     task.status = 'running'
     task.message = '获取链接…'
     emit(true)
-    fs.mkdirSync(dir, { recursive: true })
-    const info = await getMusicUrl(task.song, task.quality, { refresh: true })
+    const info = await getMusicUrl(task.song, task.quality, { refresh: true, noLocal: true })
     task.quality = info.quality
     const base = safeName(`${task.song.name} - ${task.song.singer}`)
-    let file = path.join(dir, `${base}.${extOf(info.url, info.quality)}`)
-    tmp = file + '.veyadl'
-    task.filePath = file
     task.message = ''
     task.downloaded = 0
-    await fetchToFile(info.url, tmp, task)
-    if (task.status as string == 'canceled') throw new Error('已取消')
-    if (task.downloaded < 20_000) throw new Error('下载到的文件无效')
-    // 链接里看不出格式的（比如汽水的是 m4a）：按文件开头的标记改成正确的扩展名
-    const real = /\.(mp3|flac|m4a|ogg|wav|ape|aac)(?:\?|$)/i.test(info.url) ? '' : sniffExt(tmp)
-    if (real && !file.toLowerCase().endsWith('.' + real)) {
-      file = path.join(dir, `${base}.${real}`)
-      task.filePath = file
+    const progress: io.Progress = {
+      total: 0,
+      downloaded: 0,
+      onProgress: () => {
+        task.total = progress.total
+        task.downloaded = progress.downloaded
+        task.progress = task.total ? task.downloaded / task.total : 0
+        emit()
+      },
+      onAbort: fn => { aborts.set(task.id, fn) },
     }
-    fs.renameSync(tmp, file)
+    const file = await io.saveAudio(info.url, dir, base, extOf(info.url, info.quality), progress)
+    if (task.status as string == 'canceled') throw new Error('已取消')
+    task.filePath = file
     if (settings.downloadLyric !== false) {
       try {
         const ly = await getLyric(task.song)
-        if (ly.lyric) fs.writeFileSync(path.join(dir, `${base}.lrc`), ly.lyric)
+        if (ly.lyric) await io.saveLyric(dir, base, ly.lyric)
       } catch {}
     }
     task.status = 'done'
     task.progress = 1
   } catch (err: any) {
-    if (tmp) fs.promises.unlink(tmp).catch(() => {})
     if (task.status != 'canceled') {
       task.status = 'error'
       task.message = String(err?.message ?? err)

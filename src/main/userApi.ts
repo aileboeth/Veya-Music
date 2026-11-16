@@ -1,10 +1,11 @@
-// 音源脚本管理：每个脚本运行在独立的隐藏窗口里（无 Node 权限的页面世界 + 受控的 lx API）
-import { BrowserWindow, ipcMain, session } from 'electron'
+// 音源脚本管理：每个脚本运行在独立的容器里（电脑版：隐藏窗口；手机版：Web Worker，见 userApiHost）
+import { session } from 'electron'
 import fs from 'fs'
 import path from 'path'
 import crypto from 'crypto'
 import { dataDir, load, save } from './store'
 import { nodeProxy } from './net'
+import { createHost, initHosts, type ScriptHost } from './userApiHost'
 
 export interface SourceMeta {
   id: string
@@ -21,7 +22,7 @@ export interface SourceMeta {
 }
 
 interface Runtime {
-  win: BrowserWindow | null
+  host: ScriptHost | null
   status: 'loading' | 'ready' | 'failed'
   message: string
   init: Promise<void>
@@ -32,13 +33,11 @@ interface Runtime {
 }
 
 const runtimes = new Map<string, Runtime>()
-const initResolvers = new Map<number, { id: string, done: (ok: boolean, msg: string, info?: any) => void }>()
 let onChange: () => void = () => {}
 export const setOnChange = (fn: () => void) => { onChange = fn }
 
 const IDLE_CLOSE_MS = 10 * 60_000
 const TRANSIENT_CLOSE_MS = 15_000
-const HTML = '<!DOCTYPE html><html><head><meta charset="UTF-8"><meta http-equiv="Content-Security-Policy" content="default-src \'none\'"><title>User api</title></head><body></body></html>'
 
 const sourcesDir = () => {
   const dir = path.join(dataDir(), 'sources')
@@ -143,8 +142,8 @@ const unload = async(id: string) => {
     p.reject(new Error('音源已卸载'))
   }
   rt.pending.clear()
-  if (rt.win && !rt.win.isDestroyed()) rt.win.destroy()
-  rt.win = null
+  rt.host?.destroy()
+  rt.host = null
   onChange()
 }
 
@@ -168,7 +167,7 @@ const loadScript = (meta: SourceMeta, transient = false): Runtime => {
     return exist
   }
 
-  const rt: Runtime = { win: null, status: 'loading', message: '', init: Promise.resolve(), pending: new Map(), idleTimer: null, transient }
+  const rt: Runtime = { host: null, status: 'loading', message: '', init: Promise.resolve(), pending: new Map(), idleTimer: null, transient }
   runtimes.set(meta.id, rt)
 
   rt.init = new Promise<void>((resolve) => {
@@ -181,36 +180,11 @@ const loadScript = (meta: SourceMeta, transient = false): Runtime => {
       resolve()
       return
     }
-    const win = new BrowserWindow({
-      show: false,
-      width: 300,
-      height: 200,
-      skipTaskbar: true,
-      webPreferences: {
-        contextIsolation: true,
-        nodeIntegration: false,
-        nodeIntegrationInWorker: false,
-        sandbox: false,
-        spellcheck: false,
-        webgl: false,
-        images: false,
-        disableDialogs: true,
-        autoplayPolicy: 'document-user-activation-required',
-        session: session.fromPartition('veya-userapi'),
-        preload: path.join(__dirname, '../preload/userApi.js'),
-      },
-    })
-    rt.win = win
-    const wcId = win.webContents.id
-    for (const eventName of ['will-navigate', 'will-redirect', 'will-attach-webview', 'will-prevent-unload', 'media-started-playing']) {
-      win.webContents.on(eventName as any, (event: Electron.Event) => { event.preventDefault() })
-    }
-    win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
-
+    let initDone = false
     const timer = setTimeout(() => finish(false, '初始化超时'), 25_000)
     const finish = (ok: boolean, msg: string, info?: any) => {
-      if (!initResolvers.has(wcId)) return
-      initResolvers.delete(wcId)
+      if (initDone) return
+      initDone = true
       clearTimeout(timer)
       rt.status = ok ? 'ready' : 'failed'
       rt.message = ok ? '' : (msg || '初始化失败')
@@ -225,23 +199,32 @@ const loadScript = (meta: SourceMeta, transient = false): Runtime => {
       onChange()
       resolve()
     }
-    initResolvers.set(wcId, { id: meta.id, done: finish })
-    win.on('closed', () => {
-      finish(false, '窗口已关闭')
-      if (runtimes.get(meta.id) === rt) void unload(meta.id)
+    const proxy = { host: nodeProxy()?.host ?? '', port: nodeProxy()?.port ?? '' }
+    rt.host = createHost({ name: meta.name, description: meta.description, version: meta.version, author: meta.author, homepage: meta.homepage }, script, proxy, {
+      onInit: finish,
+      onResponse: (requestKey, ok, result, message) => {
+        const p = rt.pending.get(requestKey)
+        if (!p) return
+        rt.pending.delete(requestKey)
+        clearTimeout(p.timer)
+        if (ok) p.resolve(result)
+        else p.reject(new Error(message || '请求失败'))
+      },
+      onUpdateAlert: data => {
+        const list = getList()
+        const item = list.find(m => m.id == meta.id)
+        if (!item) return
+        const isNew = item.updateAlert?.log != String(data.log ?? '')
+        item.updateAlert = { log: String(data.log ?? ''), updateUrl: data.updateUrl }
+        saveList(list)
+        // 同一条提示只提醒一次
+        if (isNew) onUpdateAlert(item.name)
+      },
+      onClosed: () => {
+        finish(false, '窗口已关闭')
+        if (runtimes.get(meta.id) === rt) void unload(meta.id)
+      },
     })
-
-    win.loadURL('data:text/html;charset=UTF-8,' + encodeURIComponent(HTML)).then(() => {
-      win.webContents.send('userApi:initEnv', {
-        name: meta.name,
-        description: meta.description,
-        version: meta.version,
-        author: meta.author,
-        homepage: meta.homepage,
-        script,
-        proxy: { host: nodeProxy()?.host ?? '', port: nodeProxy()?.port ?? '' },
-      })
-    }).catch(err => finish(false, String(err?.message ?? err)))
   })
   touchIdle(meta.id, rt)
   // 初始化可能要十几秒：临时启动的从初始化完成开始计时
@@ -250,42 +233,7 @@ const loadScript = (meta: SourceMeta, transient = false): Runtime => {
   return rt
 }
 
-const findBySender = (wcId: number) => {
-  for (const [id, rt] of runtimes) {
-    if (rt.win && !rt.win.isDestroyed() && rt.win.webContents.id == wcId) return { id, rt }
-  }
-  return null
-}
-
-export const initUserApi = () => {
-  session.fromPartition('veya-userapi').setPermissionRequestHandler((_wc, _permission, callback) => { callback(false) })
-
-  ipcMain.on('userApi:init', (event, { data, status, message }) => {
-    initResolvers.get(event.sender.id)?.done(!!status, message ?? '', data)
-  })
-  ipcMain.on('userApi:response', (event, { data, status, message }) => {
-    const found = findBySender(event.sender.id)
-    if (!found || !data?.requestKey) return
-    const p = found.rt.pending.get(data.requestKey)
-    if (!p) return
-    found.rt.pending.delete(data.requestKey)
-    clearTimeout(p.timer)
-    if (status) p.resolve(data.result)
-    else p.reject(new Error(message || '请求失败'))
-  })
-  ipcMain.on('userApi:updateAlert', (event, { data }) => {
-    const found = findBySender(event.sender.id)
-    if (!found || !data) return
-    const list = getList()
-    const item = list.find(m => m.id == found.id)
-    if (!item) return
-    const isNew = item.updateAlert?.log != String(data.log ?? '')
-    item.updateAlert = { log: String(data.log ?? ''), updateUrl: data.updateUrl }
-    saveList(list)
-    // 同一条提示只提醒一次
-    if (isNew) onUpdateAlert(item.name)
-  })
-}
+export const initUserApi = () => initHosts()
 
 let onUpdateAlert: (name: string) => void = () => {}
 export const setOnUpdateAlert = (fn: (name: string) => void) => { onUpdateAlert = fn }
@@ -370,7 +318,7 @@ export const request = async(id: string, data: { source: string, action: string,
   if (!meta) throw new Error('音源不存在')
   const rt = loadScript(meta, transient)
   await rt.init
-  if (rt.status != 'ready' || !rt.win || rt.win.isDestroyed()) throw new Error(rt.message || '音源初始化失败')
+  if (rt.status != 'ready' || !rt.host) throw new Error(rt.message || '音源初始化失败')
   touchIdle(id, rt)
   const requestKey = `request__${Math.random().toString().substring(2)}`
   return new Promise<any>((resolve, reject) => {
@@ -379,7 +327,7 @@ export const request = async(id: string, data: { source: string, action: string,
       reject(new Error('音源请求超时'))
     }, timeout)
     rt.pending.set(requestKey, { resolve, reject, timer })
-    rt.win!.webContents.send('userApi:request', { requestKey, data })
+    rt.host!.send({ requestKey, data })
   })
 }
 

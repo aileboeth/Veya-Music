@@ -99,7 +99,7 @@ else
 fi
 
 fetch() { # fetch <网址> <保存到>
-  curl -fL --retry 2 --connect-timeout 10 --max-time 300 -o "$2" "$1"
+  curl -fsSL --retry 2 --connect-timeout 10 --max-time 300 -o "$2" "$1"
 }
 
 pick_source() {

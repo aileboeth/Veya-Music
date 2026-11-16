@@ -83,8 +83,10 @@ export const readLxDatabase = (): ImportedList[] => {
 }
 
 /** 读取 LX 导出的列表文件（.lxmc / .json） */
-export const readLxFile = (filePath: string): ImportedList[] => {
-  let buf = fs.readFileSync(filePath)
+export const readLxFile = (filePath: string): ImportedList[] => parseLxBuffer(fs.readFileSync(filePath))
+
+/** 解析 LX 导出的列表文件内容（手机版选好文件后直接传内容进来） */
+export const parseLxBuffer = (buf: Buffer): ImportedList[] => {
   if (buf[0] == 0x1f && buf[1] == 0x8b) buf = zlib.gunzipSync(buf)
   const json = JSON.parse(buf.toString('utf8'))
   let lists: any[] = []
