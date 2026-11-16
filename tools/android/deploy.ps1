@@ -1,4 +1,4 @@
-# 打包调试版并装到测试手机（CC9e，ssh phone）上打开：powershell -File tools\android\deploy.ps1 [-NoBuild]
+﻿# 打包调试版并装到测试手机（CC9e，ssh phone）上打开：powershell -File tools\android\deploy.ps1 [-NoBuild]
 param([switch]$NoBuild)
 # 不能用 Stop：npm / gradle 往 stderr 写提示，PowerShell 5.1 会当成错误中断
 $ErrorActionPreference = 'Continue'

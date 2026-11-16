@@ -1,4 +1,4 @@
-# 同步端到端测试：本地起一个 Veya Sync 服务器，两个数据目录轮流 / 同时运行 tools/e2e/sync.cjs
+﻿# 同步端到端测试：本地起一个 Veya Sync 服务器，两个数据目录轮流 / 同时运行 tools/e2e/sync.cjs
 # 先 npm run build 和 powershell -File server\build.ps1
 $ErrorActionPreference = 'Stop'
 $root = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent

@@ -1,6 +1,6 @@
 # Veya Music
 
-带智能推荐的多平台音乐播放器（Windows 桌面版）。兼容 LX Music 的自定义音源脚本。
+带智能推荐的多平台音乐播放器，有 Windows 电脑版和安卓手机版。兼容 LX Music 的自定义音源脚本。
 
 ## 功能
 
@@ -16,7 +16,14 @@
   - 发现页：猜你喜欢、为你推荐的歌单、排行榜、热门歌单
 - **我的歌单**：收藏在线歌单并可同步更新；从 LX Music 一键迁移「我的列表」
 - **导入歌单**：粘贴网易云音乐 / QQ 音乐 / 酷狗 / 酷我 / 咪咕 / 汽水音乐的歌单分享链接，自动识别平台并导入；其他 App 可以粘贴「歌名 - 歌手」文本，逐首匹配
-- **桌面歌词**、**歌曲下载**（含 .lrc）、浅色 / 深色主题、托盘、媒体键
+- **桌面歌词**、**歌曲下载**（含 .lrc，下载过的歌没网也能放）、**定时关闭**、浅色 / 深色主题、托盘、媒体键
+- **多设备同步和联动**（需要在自己的服务器上装 [Veya Sync](docs/SYNC.md)，一行命令）：同步歌单、听歌记录和推荐、音源脚本、部分设置；电脑 ⇄ 手机**接力播放**、**推歌**、**一起听**
+
+## 安卓手机版
+
+和电脑版同一套界面和功能，另外有：后台播放、锁屏 / 通知栏 / 耳机按键控制、**悬浮歌词**、锁屏和车载蓝牙显示歌词、下载到手机的「音乐/Veya Music」文件夹、扫码连接同步服务器、应用内更新。
+
+需要 Android 10 及以上。在 [Releases](https://github.com/aileboeth/Veya-Music/releases) 下载 Veya-Music-版本号.apk 安装。
 
 ## 开发
 
@@ -29,18 +36,28 @@ npm run dist       # 打包安装程序到 dist/
 node tools\make-icons.cjs   # 重新生成图标
 ```
 
+手机版（需要 JDK 17+ 和 Android SDK，SDK 路径写在 `android/local.properties`）：
+
+```powershell
+npm run build:android                      # 把界面打包进 android/app/src/main/assets/www
+cd android; .\gradlew.bat :app:assembleDebug
+```
+
 自动化巡检（使用独立的数据目录 `.e2e/`，不影响正式数据）：
 
 ```powershell
 npm run build
 powershell -File tools\run-e2e.ps1 -Steps tools\e2e\features.cjs -Fresh
+powershell -File tools\e2e\sync-run.ps1   # 同步：本地起一个 Veya Sync，两个数据目录互相同步、接力
+node tools\test-sync-util.mjs; node tools\test-android-shims.mjs
+cd server; go test ./...
 ```
 
 ## 发布新版本
 
-1. 改 `package.json` 的 `version`，在 `src/renderer/src/changelog.json` 最前面加上这一版的更新内容（客户端升级后会显示）
-2. `npm run dist`（没有对应版本的更新日志会报错）
-3. 在 GitHub 新建 Release，标签 `v版本号`，把 `dist\release-notes.md` 的内容粘贴到描述里（客户端在「重启更新」前显示），上传 `dist\` 里的 `Veya-Music-Setup-版本号.exe`、`.exe.blockmap`、`latest.yml`
+1. 改 `package.json` 的 `version`（电脑版、手机版、同步服务器共用这个版本号），在 `src/renderer/src/changelog.json` 最前面加上这一版的更新内容（客户端升级后会显示）
+2. `powershell -File tools\release.ps1`：电脑版安装包、手机版 APK（签名文件在仓库外）、同步服务器全部打包到 `dist\release-版本号\`
+3. 在 GitHub 新建 Release，标签 `v版本号`，把 `release-notes.md` 的内容粘贴到描述里，上传文件夹里其余所有文件（电脑版、手机版的自动更新和服务器的一键安装都从最新的 Release 下载）
 
 ## 目录
 
@@ -49,7 +66,11 @@ powershell -File tools\run-e2e.ps1 -Steps tools\e2e\features.cjs -Fresh
 - `sources/` 从网上收集的可用音源脚本（第三方，说明见 [sources/README.md](sources/README.md)）
 - `src/main/lx` 来自 lx-music-desktop 的 musicSdk（Apache-2.0，见 `NOTICE`）
 - `src/preload` 预加载脚本（`userApi.js` 是音源脚本的受控运行环境）
-- `src/renderer` 界面（Vue 3）
+- `src/renderer` 界面（Vue 3）；`MobileApp.vue` 是手机版的外壳，页面两端共用
+- `src/main/sync` 同步引擎；`src/renderer/src/remote.ts` 设备联动（接力、推歌、一起听）
+- `src/android` 手机版的「主进程」：在 WebView 里复用 `src/main` 的模块（`shims/` 替代 Node / Electron 接口），音源脚本跑在 Web Worker 里
+- `android/` 安卓原生部分（Kotlin）：WebView 宿主、ExoPlayer 后台播放、悬浮歌词、下载、网络
+- `server/` Veya Sync 同步服务器（Go）和一键安装脚本
 
 ## 说明
 

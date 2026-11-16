@@ -1,4 +1,4 @@
-# 编译 Veya Sync：Linux amd64 / arm64 / armv7（发布用）+ Windows amd64（本机测试用）
+﻿# 编译 Veya Sync：Linux amd64 / arm64 / armv7（发布用）+ Windows amd64（本机测试用）
 # 用法: powershell -File server\build.ps1 [-Version 0.1.11] [-Out dist\sync]
 param(
   [string]$Version = '',
