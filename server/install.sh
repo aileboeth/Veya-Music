@@ -37,6 +37,7 @@ while [ $# -gt 0 ]; do
     --purge) PURGE=1 ;;
     --yes|-y) YES=1 ;;
     --version) VERSION="${2:-}"; shift ;;
+    --self-tmp) rm -f "$0" 2>/dev/null || true ;;  # sudo 重新运行时用的临时副本，读进来后就删掉
     -h|--help) sed -n '2,11p' "$0" 2>/dev/null || true; exit 0 ;;
     *) die "不认识的参数: $1" ;;
   esac
@@ -60,7 +61,7 @@ if [ "$(id -u)" -ne 0 ] && [ "$USER_INSTALL" -eq 0 ]; then
         curl -fsSL --connect-timeout 6 --max-time 30 -o "$TMP_SELF" "${MIRRORS[1]}$src" ||
         die "无法重新下载安装脚本，请切换到 root（su -）后再运行"
     fi
-    exec sudo -E bash "$TMP_SELF" "${ORIG_ARGS[@]}"
+    exec sudo -E bash "$TMP_SELF" "${ORIG_ARGS[@]}" --self-tmp
   else
     die "需要 root 权限。请先运行 su - 切换到 root 再执行，或者加 --user-install 装到自己的目录"
   fi
@@ -119,9 +120,13 @@ pick_source() {
   die "GitHub 和加速镜像都连不上。可以用 --mirror 指定一个能用的 GitHub 加速前缀"
 }
 
+TMPD=""
+trap '[ -z "$TMPD" ] || rm -rf "$TMPD"' EXIT
+
 download_binary() {
   pick_source
-  local tmp; tmp="$(mktemp -d)"
+  TMPD="$(mktemp -d)"
+  local tmp="$TMPD"
   local name="veya-sync-linux-$ARCH"
   say "下载 $name ${PREFIX:+（经由 $PREFIX）}"
   fetch "${PREFIX}$BASE_PATH/veya-sync-SHA256SUMS.txt" "$tmp/sums"
@@ -140,22 +145,50 @@ download_binary() {
     fetch "${PREFIX}$BASE_PATH/veya-sync-install.sh" "$DIR/install.sh.new" && mv -f "$DIR/install.sh.new" "$DIR/install.sh" || true
   fi
   chmod 755 "$DIR/install.sh" 2>/dev/null || true
-  rm -rf "$tmp"
+  rm -rf "$tmp"; TMPD=""
   say "已安装 $("$BIN" version)"
 }
 
 # ---------- 防火墙 ----------
+# 只记录脚本自己加的规则（$DIR/.firewall），卸载时只删这些，不动原来就有的
+FW_LOG="$DIR/.firewall"
+# 先把命令输出存下来再查：pipefail 下 "cmd | grep -q" 会因为 grep 提前退出（SIGPIPE）被误判成失败
+has() { grep -Eq -- "$2" <<<"$1"; }
 open_port() {
-  local p="$1"
+  local p="$1" st
   [ "$USER_INSTALL" -eq 1 ] && return 0
-  if command -v ufw >/dev/null 2>&1 && ufw status 2>/dev/null | grep -q "Status: active"; then
-    ufw allow "$p/tcp" >/dev/null && say "已在 ufw 放行端口 $p"
+  st=""; command -v ufw >/dev/null 2>&1 && st="$(ufw status 2>/dev/null || true)"
+  if has "$st" "Status: active"; then
+    if ! has "$st" "^$p(/tcp)?[[:space:]]"; then
+      ufw allow "$p/tcp" >/dev/null && echo "ufw $p" >> "$FW_LOG" && say "已在 ufw 放行端口 $p"
+    fi
   elif command -v firewall-cmd >/dev/null 2>&1 && firewall-cmd --state >/dev/null 2>&1; then
-    firewall-cmd --permanent --add-port="$p/tcp" >/dev/null && firewall-cmd --reload >/dev/null && say "已在 firewalld 放行端口 $p"
-  elif command -v iptables >/dev/null 2>&1 && iptables -S INPUT 2>/dev/null | grep -q -- "-P INPUT DROP"; then
-    iptables -C INPUT -p tcp --dport "$p" -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport "$p" -j ACCEPT
-    say "已在 iptables 放行端口 $p（重启后可能需要重新放行）"
+    if ! firewall-cmd --permanent --query-port="$p/tcp" >/dev/null 2>&1; then
+      firewall-cmd --permanent --add-port="$p/tcp" >/dev/null && firewall-cmd --reload >/dev/null &&
+        echo "firewalld $p" >> "$FW_LOG" && say "已在 firewalld 放行端口 $p"
+    fi
+  elif command -v iptables >/dev/null 2>&1 && has "$(iptables -S INPUT 2>/dev/null || true)" "-P INPUT DROP"; then
+    if ! iptables -C INPUT -p tcp --dport "$p" -j ACCEPT 2>/dev/null; then
+      iptables -I INPUT -p tcp --dport "$p" -j ACCEPT && echo "iptables $p" >> "$FW_LOG"
+      say "已在 iptables 放行端口 $p（重启后可能需要重新放行）"
+    fi
   fi
+}
+
+close_ports() {
+  [ -f "$FW_LOG" ] || return 0
+  local kind p
+  while read -r kind p; do
+    [ -n "$p" ] || continue
+    case "$kind" in
+      ufw) ufw delete allow "$p/tcp" >/dev/null 2>&1 && say "已删除 ufw 里端口 $p 的放行规则" ;;
+      firewalld) firewall-cmd --permanent --remove-port="$p/tcp" >/dev/null 2>&1 && firewall-cmd --reload >/dev/null 2>&1 &&
+        say "已删除 firewalld 里端口 $p 的放行规则" ;;
+      iptables) while iptables -D INPUT -p tcp --dport "$p" -j ACCEPT 2>/dev/null; do :; done
+        say "已删除 iptables 里端口 $p 的放行规则" ;;
+    esac
+  done < "$FW_LOG"
+  rm -f "$FW_LOG"
 }
 
 # ---------- 服务 ----------
@@ -206,7 +239,9 @@ EOF
     systemctl --user daemon-reload
     systemctl --user enable veya-sync >/dev/null 2>&1
     systemctl --user restart veya-sync
-    command -v loginctl >/dev/null 2>&1 && loginctl enable-linger "$(id -un)" >/dev/null 2>&1 || true
+    if command -v loginctl >/dev/null 2>&1 && has "$(loginctl show-user "$(id -un)" -p Linger 2>/dev/null || true)" "Linger=no"; then
+      loginctl enable-linger "$(id -un)" >/dev/null 2>&1 && touch "$DIR/.linger" || true
+    fi
     MODE="systemd-user"
   else
     # 没有 systemd（容器、chroot 等）：后台运行 + 开机自启
@@ -302,14 +337,28 @@ do_uninstall() {
   elif [ "$USER_INSTALL" -eq 1 ] && has_user_systemd; then
     systemctl --user disable --now veya-sync >/dev/null 2>&1 || true
     rm -f "$HOME/.config/systemd/user/veya-sync.service"
+    systemctl --user daemon-reload >/dev/null 2>&1 || true
   fi
   pkill -f "$BIN serve" 2>/dev/null || true
-  command -v crontab >/dev/null 2>&1 && { crontab -l 2>/dev/null | grep -v "veya-sync/run.sh" | crontab - 2>/dev/null || true; }
+  if command -v crontab >/dev/null 2>&1; then
+    local cron; cron="$(crontab -l 2>/dev/null || true)"
+    if has "$cron" "veya-sync/run.sh"; then
+      { grep -v "veya-sync/run.sh" <<<"$cron" || true; } | crontab - 2>/dev/null || true
+    fi
+  fi
   [ "$USER_INSTALL" -eq 0 ] && rm -f /usr/local/bin/veya-sync
+  close_ports
+  if [ -f "$DIR/.linger" ]; then
+    loginctl disable-linger "$(id -un)" >/dev/null 2>&1 || true
+    rm -f "$DIR/.linger"
+  fi
   if [ "$PURGE" -eq 1 ]; then
     rm -rf "$DIR"
-    [ "$USER_INSTALL" -eq 0 ] && { userdel veya-sync 2>/dev/null || true; }
-    say "已卸载，并删除了所有数据"
+    if [ "$USER_INSTALL" -eq 0 ]; then
+      userdel veya-sync 2>/dev/null || true
+      getent group veya-sync >/dev/null 2>&1 && { groupdel veya-sync 2>/dev/null || true; }
+    fi
+    say "已彻底卸载：程序、服务、开机自启、命令、防火墙规则、系统用户和全部数据都已删除"
   else
     rm -f "$BIN" "$DIR/run.sh"
     say "已卸载。数据和配置留在 $DIR（加 --purge 可以一起删掉）"

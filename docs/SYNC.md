@@ -43,10 +43,19 @@ curl -fsSL https://p.jackyu.cn/https://github.com/aileboeth/Veya-Music/releases/
 | `veya-sync info --url https://新地址:7650` | 服务器 IP 变了 / 自动检测的地址不对时修改 |
 | `veya-sync update` | 更新到最新版（数据和配对码不变） |
 | `veya-sync reset-key` | 更换密钥（配对码泄露时用；之后所有设备要重新配对） |
-| `veya-sync uninstall` | 卸载（保留数据）；加 `--purge` 连数据一起删掉 |
+| `veya-sync uninstall` | 卸载程序，数据留在 `/opt/veya-sync`（重新安装后接着用） |
+| `veya-sync uninstall --purge --yes` | 彻底卸载：程序、服务、开机自启、命令、安装时加的防火墙规则、系统用户和全部数据 |
 | `journalctl -u veya-sync -n 50` | 查看运行日志 |
 
 数据在 `/opt/veya-sync/data/`，备份这个文件夹即可。
+
+`veya-sync` 命令不在了的话，用一键安装脚本卸载：
+
+```bash
+curl -fsSL https://github.com/aileboeth/Veya-Music/releases/latest/download/veya-sync-install.sh | bash -s -- uninstall --purge --yes
+```
+
+脚本只删它自己加的防火墙规则，你原来就放行过的端口不会动。系统日志（journalctl）里以前的运行记录由系统按时间自动清理，脚本不会去删。
 
 ## 已经有域名和 Nginx / 1Panel
 

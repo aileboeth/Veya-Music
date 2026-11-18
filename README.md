@@ -25,6 +25,40 @@
 
 需要 Android 10 及以上。在 [Releases](https://github.com/aileboeth/Veya-Music/releases) 下载 Veya-Music-版本号.apk 安装。
 
+## 同步服务器 Veya Sync（自部署）
+
+电脑和手机之间的同步、接力播放、推歌、一起听都要靠它。它装在你自己的服务器上（常见 Linux，x86_64 / ARM 都行）。详细说明看 [docs/SYNC.md](docs/SYNC.md)。
+
+**安装**（用 root 运行）：
+
+```bash
+curl -fsSL https://github.com/aileboeth/Veya-Music/releases/latest/download/veya-sync-install.sh | bash
+```
+
+国内服务器连不上 GitHub 时用这条：
+
+```bash
+curl -fsSL https://p.jackyu.cn/https://github.com/aileboeth/Veya-Music/releases/latest/download/veya-sync-install.sh | bash
+```
+
+装完会显示二维码和 `veya1.` 开头的配对码。电脑在「设置 → 同步与多设备」里粘贴配对码，手机在「我的 → 多设备同步」里扫码。云服务器记得在控制台的安全组里放行 **TCP 7650**。
+
+**卸载**：
+
+```bash
+veya-sync uninstall --purge --yes
+```
+
+会删掉程序、服务、开机自启、`veya-sync` 命令、安装时加的防火墙放行规则、系统用户 `veya-sync`，以及所有数据（歌单、配对密钥、证书）。不加 `--purge` 的话只卸载程序，数据留在 `/opt/veya-sync`，重新安装后可以接着用。
+
+如果 `veya-sync` 命令已经不在了，也可以这样彻底卸载：
+
+```bash
+curl -fsSL https://github.com/aileboeth/Veya-Music/releases/latest/download/veya-sync-install.sh | bash -s -- uninstall --purge --yes
+```
+
+其他命令：`veya-sync info` 再次显示配对码，`veya-sync update` 更新（数据和配对码不变），`veya-sync reset-key` 更换密钥。
+
 ## 开发
 
 ```powershell
