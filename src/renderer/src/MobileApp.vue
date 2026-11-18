@@ -27,11 +27,12 @@ import MyListView from './views/MyList.vue'
 import Recent from './views/Recent.vue'
 import Search from './views/Search.vue'
 import Settings from './views/Settings.vue'
+import About from './views/About.vue'
 import SongLists from './views/SongLists.vue'
 
 const views: Record<string, Component> = {
   discover: Discover, search: Search, songlists: SongLists, listdetail: ListDetail, boards: Boards,
-  mylist: MyListView, daily: Daily, recent: Recent, downloads: Downloads, settings: Settings, library: Library,
+  mylist: MyListView, daily: Daily, recent: Recent, downloads: Downloads, settings: Settings, about: About, library: Library,
 }
 const TABS = [
   { name: 'discover', label: '首页', icon: 'home' },
@@ -63,6 +64,7 @@ const title = computed(() => {
     case 'recent': return '最近播放'
     case 'downloads': return '下载'
     case 'settings': return '设置'
+    case 'about': return '关于'
     default: return ''
   }
 })

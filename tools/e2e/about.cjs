@@ -1,0 +1,28 @@
+// 设置 → 关于 Veya Music：页面内容 + 免责声明 / 更新日志弹窗
+module.exports = async({ js, shot, sleep, log, clickText }) => {
+  await clickText('.nav-item', '设置')
+  await sleep(600)
+  await js(`[...document.querySelectorAll('h2')].find(h => h.textContent == '关于与更新').scrollIntoView()`)
+  await sleep(300)
+  await shot('a1-settings-entry')
+  log('entry', await clickText('.about-row', '关于 Veya Music'))
+  await sleep(700)
+  log('rows', await js(`return [...document.querySelectorAll('.group .row')].map(r => r.textContent.trim().replace(/\\s+/g, ' '))`))
+  log('settings nav on', await js(`return document.querySelector('.nav-item.settings')?.classList.contains('on')`))
+  await shot('a2-about')
+  await clickText('.row', '免责声明')
+  await sleep(400)
+  log('modal', await js(`return document.querySelector('.modal h3')?.textContent ?? ''`))
+  await clickText('.modal .btn.primary', '我知道了')
+  await sleep(300)
+  await clickText('.row', '更新日志')
+  await sleep(400)
+  log('modal', await js(`return document.querySelector('.modal h3')?.textContent ?? ''`))
+  await clickText('.modal .btn.primary', '确定')
+  await sleep(300)
+  // 深色
+  await js(`window.__veya.settings.theme = 'dark'`)
+  await sleep(500)
+  await shot('a3-about-dark')
+  await js(`window.__veya.settings.theme = 'system'`)
+}

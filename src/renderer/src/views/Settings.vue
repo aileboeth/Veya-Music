@@ -8,7 +8,7 @@ import SyncSettings from '../components/SyncSettings.vue'
 import { importLists } from '../lists'
 import { player, toggleDesktopLyric } from '../player'
 import { settings } from '../settings'
-import { alertDialog, confirmDialog, openImport, openSheet, toast } from '../ui'
+import { alertDialog, confirmDialog, go, openImport, openSheet, toast } from '../ui'
 import { isAndroid } from '../platform'
 import { sleepLeft, sleepState } from '../sleep'
 import { checkUpdate, installUpdate, showChangelog, update, updateText } from '../update'
@@ -443,11 +443,11 @@ const placeLyric = (where: string) => void api('lyric.place', where)
         <div><b>自动检查更新</b><span>启动时和每隔几小时检查一次，有新版本自动在后台下载</span></div>
         <button class="switch" :class="{ on: settings.autoUpdate }" @click="settings.autoUpdate = !settings.autoUpdate" />
       </div>
+      <button class="item about-row" @click="go('about')">
+        <div><b>关于 Veya Music</b><span>作者、开源地址和协议、致谢、免责声明</span></div>
+        <Icon name="forward" :size="18" />
+      </button>
       <p class="hint about">
-        <b>Veya Music</b> {{ appInfo.version }} · <a @click="api('app.open', 'https://github.com/aileboeth/Veya-Music')">GitHub 主页</a><br>
-        数据保存在：<span class="path">{{ appInfo.dataDir }}</span><br>
-        各平台的搜索、歌单、榜单、歌词接口使用了开源项目
-        <a @click="api('app.open', 'https://github.com/lyswhut/lx-music-desktop')">lx-music-desktop</a>（Apache-2.0）的 musicSdk，并兼容它的自定义音源脚本接口，感谢原作者。<br>
         本软件仅供学习和技术交流使用，不提供任何音频内容：在线数据来自各平台公开的网络接口，播放链接完全来自你自行导入的音源脚本，均为网络来源，与作者无关。<a @click="showDisclaimer">查看完整的免责声明</a>
       </p>
     </section>
@@ -484,6 +484,9 @@ h2 { font-size: 17px; margin: 0 0 12px; }
 .s-update { display: flex; align-items: center; gap: 10px; font-size: 12px; color: #c77d00; margin-top: 6px; }
 .s-update .btn { height: 24px; flex: none; }
 .about a { text-decoration: underline; }
+.about-row { width: 100%; text-align: left; color: var(--text3); }
+.about-row:hover { background: var(--hover); }
+.about-row b { color: var(--text); }
 .speed-time { font-size: 12px; margin-left: 4px; }
 .spinner.mini { width: 14px; height: 14px; border-width: 2px; }
 .s-speed { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }

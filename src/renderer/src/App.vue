@@ -25,11 +25,12 @@ import MyListView from './views/MyList.vue'
 import Recent from './views/Recent.vue'
 import Search from './views/Search.vue'
 import Settings from './views/Settings.vue'
+import About from './views/About.vue'
 import SongLists from './views/SongLists.vue'
 
 const views: Record<string, Component> = {
   discover: Discover, search: Search, songlists: SongLists, listdetail: ListDetail, boards: Boards,
-  mylist: MyListView, daily: Daily, recent: Recent, downloads: Downloads, settings: Settings,
+  mylist: MyListView, daily: Daily, recent: Recent, downloads: Downloads, settings: Settings, about: About,
 }
 const nav = [
   { name: 'discover', label: '发现', icon: 'discover' },
@@ -166,7 +167,7 @@ onBeforeUnmount(() => {
       <button v-if="update.status == 'downloaded'" class="update-btn" :title="'新版本 ' + update.version + ' 已下载'" @click="installUpdate">
         <Icon name="sparkle" :size="17" /><span>重启更新 {{ update.version }}</span>
       </button>
-      <button class="nav-item settings" :class="{ on: route.name == 'settings' }" @click="go('settings')">
+      <button class="nav-item settings" :class="{ on: route.name == 'settings' || route.name == 'about' }" @click="go('settings')">
         <Icon name="settings" :size="19" /><span>设置</span>
       </button>
     </aside>
