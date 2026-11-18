@@ -162,7 +162,7 @@ export class NativeAudio extends EventTarget {
     this.bridge.cmd('next', next ? { ...next, loadId: ++this.seq } : null)
   }
   /** 通知栏 / 锁屏上显示的歌曲信息 */
-  setMeta(meta: { title: string, artist: string, album?: string, artwork?: string }) {
+  setMeta(meta: { title: string, artist: string, album?: string, artwork?: string, liked?: boolean, lyricOn?: boolean }) {
     this.bridge.cmd('meta', meta)
   }
 }

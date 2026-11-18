@@ -133,12 +133,15 @@ object PlayerHub {
     }
 
     private fun metadata(m: JSONObject, lyric: String? = null): MediaMetadata {
+        val second = if (!lyric.isNullOrBlank()) lyric else m.optString("artist")
         val b = MediaMetadata.Builder()
             .setTitle(m.optString("title"))
-            .setArtist(if (!lyric.isNullOrBlank()) lyric else m.optString("artist"))
+            .setArtist(second)
             .setAlbumTitle(m.optString("album"))
             .setAlbumArtist(m.optString("artist"))
+            // 系统卡片读的是「显示标题 / 显示副标题」这一组：只填标题时，副标题（歌手）会变成空的
             .setDisplayTitle(m.optString("title"))
+            .setSubtitle(second)
             .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
         val art = m.optString("artwork").takeIf { it.startsWith("http") }
         if (art != null) {
@@ -204,7 +207,10 @@ object PlayerHub {
     private fun loadArtwork(m: JSONObject) {
         val art = m.optString("artwork").takeIf { it.startsWith("http") } ?: return
         Artwork.load(art) {
-            if (meta.optString("artwork") == art) updateCurrentMeta()
+            if (meta.optString("artwork") == art) {
+                updateCurrentMeta()
+                PlaybackService.instance?.refreshNotification()
+            }
         }
     }
 
@@ -222,6 +228,26 @@ object PlayerHub {
         try {
             p.replaceMediaItem(p.currentMediaItemIndex, cur.buildUpon().setMediaMetadata(metadata(meta, lyric)).build())
         } catch (_: Exception) {}
+    }
+
+    /** 通知要显示的内容（VeyaNotification 用） */
+    data class NotifyInfo(
+        val title: String, val artist: String, val album: String, val lyric: String?,
+        val liked: Boolean, val lyricOn: Boolean, val artUrl: String?, val artBytes: ByteArray?,
+    )
+
+    fun notifyInfo(): NotifyInfo {
+        val art = meta.optString("artwork").takeIf { it.startsWith("http") }
+        return NotifyInfo(
+            title = meta.optString("title"),
+            artist = meta.optString("artist"),
+            album = meta.optString("album"),
+            lyric = if (lockLyric) lines.getOrNull(lineIndex)?.text else null,
+            liked = meta.optBoolean("liked"),
+            lyricOn = meta.optBoolean("lyricOn"),
+            artUrl = art,
+            artBytes = art?.let { Artwork.get(it) },
+        )
     }
 
     fun positionSec(): Double = (exo?.currentPosition ?: 0L) / 1000.0
@@ -287,6 +313,8 @@ object PlayerHub {
                 meta = a ?: JSONObject()
                 updateCurrentMeta()
                 loadArtwork(meta)
+                // 「喜欢」/ 桌面歌词状态变了时歌曲信息不变，播放器不会重画通知
+                PlaybackService.instance?.refreshNotification()
                 LyricOverlay.setTitle("${meta.optString("title")} - ${meta.optString("artist")}")
             }
             "lines" -> {

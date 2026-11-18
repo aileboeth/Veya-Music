@@ -6,6 +6,7 @@ import { toast } from './ui'
 import { buildLyric, type LyricLine } from './lyricFx'
 import { isAndroid } from './platform'
 import { NativeAudio } from './nativeAudio'
+import { isLoved, toggleLove } from './lists'
 
 export interface QueueSource { type: string, name: string, route?: { name: string, params: Record<string, any> } }
 export type { LyricLine }
@@ -600,7 +601,7 @@ export const toggleDesktopLyric = () => void api('lyric.toggle')
 const metaOf = (song: Song) => ({ title: song.name, artist: song.singer, album: song.albumName, artwork: song.img ?? '' })
 const updateMediaSession = () => {
   if (nativeAudio) {
-    if (player.song) nativeAudio.setMeta({ ...metaOf(player.song), artwork: player.cover || player.song.img || '' })
+    if (player.song) nativeAudio.setMeta({ ...metaOf(player.song), artwork: player.cover || player.song.img || '', liked: isLoved(player.song), lyricOn: !!player.lyricWindow })
     return
   }
   if (!('mediaSession' in navigator)) return
@@ -662,12 +663,17 @@ export const initPlayer = async() => {
     if (cmd == 'toggle') toggle()
     else if (cmd == 'play') { if (!player.playing) toggle() } else if (cmd == 'pause') { if (player.playing) toggle() } else if (cmd == 'next') void next()
     else if (cmd == 'prev') prev()
+    // 通知栏上的「喜欢」「桌面歌词」按钮
+    else if (cmd == 'like') { if (player.song) toggleLove(player.song) } else if (cmd == 'lyric') toggleDesktopLyric()
   })
   player.lyricWindow = await api<boolean>('lyric.visible')
   on('lyric:visible', (v: boolean) => {
     player.lyricWindow = v
     if (v) pushDesktopLyric()
+    if (nativeAudio) updateMediaSession()
   })
+  // 在别处点了喜欢 / 取消喜欢：通知栏上的爱心跟着变
+  if (nativeAudio) watch(() => isLoved(player.song), updateMediaSession)
   on('lyric:request', pushDesktopLyric)
   watch(() => settings.showTranslation, pushDesktopLyric)
   updateMediaSession()
