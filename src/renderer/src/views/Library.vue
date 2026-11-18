@@ -13,7 +13,7 @@ defineProps<{ params: Record<string, any> }>()
 
 const syncText = computed(() => {
   if (!sync.paired) return '连接自己的服务器，和电脑同步歌单、记录和音源'
-  if (sync.syncing) return '正在同步…'
+  if (sync.showSyncing) return '正在同步…'
   if (sync.error) return '同步出错：' + sync.error
   if (!sync.online) return '正在连接同步服务器…'
   const others = sync.devices.filter(d => d.online && d.id != sync.deviceId).length

@@ -17,13 +17,29 @@ export interface SyncState {
   error: string
   pending: number
   devices: SyncDevice[]
+  /** 界面上显示「正在同步…」：一次同步超过 1.5 秒才显示，平时的小同步一闪而过，不打扰 */
+  showSyncing?: boolean
 }
 
 export const sync = reactive<SyncState>({
   paired: false, enabled: false, url: '', server: '', deviceId: '', deviceName: '',
   groups: { lists: true, history: true, sources: true, settings: true },
-  online: false, syncing: false, lastSync: 0, error: '', pending: 0, devices: [],
+  online: false, syncing: false, lastSync: 0, error: '', pending: 0, devices: [], showSyncing: false,
 })
+
+let slowTimer: any = null
+const updateShowSyncing = () => {
+  if (!sync.syncing) {
+    clearTimeout(slowTimer)
+    slowTimer = null
+    sync.showSyncing = false
+  } else if (!slowTimer && !sync.showSyncing) {
+    slowTimer = setTimeout(() => {
+      slowTimer = null
+      sync.showSyncing = sync.syncing
+    }, 1500)
+  }
+}
 
 /** 其他设备最新上报的「正在播放」：设备 id -> 状态 */
 export const remoteNP = reactive<Record<string, any>>({})
@@ -33,8 +49,10 @@ export const initSync = async() => {
   if (inited) return
   inited = true
   Object.assign(sync, await api<SyncState>('sync.state'))
+  updateShowSyncing()
   on('sync:state', (s: SyncState) => {
     Object.assign(sync, s)
+    updateShowSyncing()
     // 下线的设备不再显示它在放什么
     for (const id of Object.keys(remoteNP)) if (!s.devices.some(d => d.id == id && d.online)) delete remoteNP[id]
     for (const d of s.devices) if (d.online && d.np && d.id != s.deviceId) remoteNP[d.id] ??= d.np

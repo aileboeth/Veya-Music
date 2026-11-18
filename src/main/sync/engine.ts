@@ -157,6 +157,8 @@ const diffDomain = (d: Domain) => {
   }
   for (const [k, m] of mirror) {
     if (!m.h || proj.has(k) || domainOfKey(k) !== d) continue
+    // 别的设备的记录（例如它的听歌统计）：本机没有不代表删掉了，不能发删除，否则两台设备会来回互删
+    if (d.owns && !d.owns(c, k)) continue
     const t = Math.max(t0, m.t + 1)
     mirror.set(k, { t, d: c.device, h: '' })
     outbox.set(k, { k, v: null, t })
@@ -185,7 +187,7 @@ const onSave = (key: string) => {
   if (localTimer) clearTimeout(localTimer)
   localTimer = setTimeout(() => {
     localTimer = null
-    if (flushLocal() || outbox.size) kick(false)
+    if (flushLocal() || outbox.size) void kick()
   }, 1500)
 }
 
@@ -195,6 +197,12 @@ const applyRemote = (recs: Array<{ k: string, v: any, t: number, d: string }>) =
   for (const r of recs) {
     const d = domainOfKey(r.k)
     if (!d || !enabledDomain(d)) continue
+    // 别的设备改了「归本机管」的记录（0.1.11 有个 bug 会把别的设备的听歌统计当成删除发出来）：
+    // 不接受，稍后用本机的数据覆盖回去
+    if (d.owns && r.d != conf?.device.id && d.owns(ctx(), r.k)) {
+      foreignOwned.set(r.k, Math.max(foreignOwned.get(r.k) ?? 0, r.t))
+      continue
+    }
     const m = mirror.get(r.k)
     if (m && (m.t > r.t || (m.t == r.t && m.d >= r.d))) continue
     const h = hashOf(r.v)
@@ -223,6 +231,26 @@ const applyRemote = (recs: Array<{ k: string, v: any, t: number, d: string }>) =
   if (touched.size) listeners.data([...touched])
   // 写回后的数据再比对一次：本地顺序整理之类的差异会作为新的修改发出去
   for (const d of byDomain.keys()) diffDomain(d)
+}
+
+/**
+ * 把被别的设备改掉的本机记录重新推上去。最多 10 分钟一次：
+ * 另一台还是旧版本、还在误删时，不会变成来回互删的死循环
+ */
+const foreignOwned = new Map<string, number>() // 记录 -> 别的设备写入的修改时间
+let lastRestore = 0
+const restoreOwned = () => {
+  if (!foreignOwned.size || Date.now() - lastRestore < 10 * 60_000) return
+  lastRestore = Date.now()
+  const doms = new Set<Domain>()
+  for (const [k, t] of foreignOwned) {
+    // 镜像标成「已删除」、时间取对方那次写入：重新比对时本机的数据会用更晚的时间推上去，盖过对方的写入
+    mirror.set(k, { t: Math.max(mirror.get(k)?.t ?? 0, t), d: conf?.device.id ?? '', h: '' })
+    const d = domainOfKey(k)
+    if (d) doms.add(d)
+  }
+  foreignOwned.clear()
+  for (const d of doms) if (enabledDomain(d)) diffDomain(d)
 }
 
 // ---------------- 拉取 / 推送 ----------------
@@ -295,6 +323,7 @@ const syncRound = async() => {
     flushLocal()
     await pull()
   }
+  restoreOwned()
   await push()
 }
 
@@ -320,9 +349,55 @@ const runOnce = async() => {
   }
 }
 
-/** 安排一次同步；正在同步时等它结束再来一次 */
-const kick = (_wantPull = true) => {
+// ---------------- 前台 / 后台（手机） ----------------
+// 手机切到后台后不再同步数据（回到前台时一次补上）；实时通道只在播放时保留（别的设备才能接力这台正在放的歌），
+// 不放歌时过一会儿就断开。电脑不调用 setActivity，一直按前台处理。
+let foreground = true
+let playingNow = false
+let idleTimer: NodeJS.Timeout | null = null
+const IDLE_DISCONNECT = 60_000
+const wantSocket = () => foreground || playingNow
+
+const suspendSocket = () => {
+  if (reconnectTimer) clearTimeout(reconnectTimer)
+  reconnectTimer = null
+  if (!socket) return
+  socket.close()
+  socket = null
+  state.online = false
+  state.devices = []
+  emitState()
+}
+
+export const setActivity = (a: { foreground?: boolean, playing?: boolean }) => {
+  const wasFg = foreground
+  if (a.foreground !== undefined) foreground = a.foreground
+  if (a.playing !== undefined) playingNow = a.playing
+  if (idleTimer) clearTimeout(idleTimer)
+  idleTimer = null
+  if (!conf?.enabled) return
+  if (wantSocket()) connect()
+  else idleTimer = setTimeout(() => { idleTimer = null; if (!wantSocket()) suspendSocket() }, IDLE_DISCONNECT)
+  if (foreground && !wasFg) {
+    // 回到前台：把后台期间别的设备的改动拉下来、本机的改动推上去
+    void kick()
+  } else if (!foreground && wasFg) {
+    // 切到后台：最后同步一次，把还没上传的改动发出去
+    if (localTimer) {
+      clearTimeout(localTimer)
+      localTimer = null
+      flushLocal()
+    }
+    void kick(true)
+  }
+}
+
+/** 安排一次同步；正在同步时等它结束再来一次。手机在后台时只记下来，回到前台再同步（force 除外） */
+const kick = (force = false) => {
   if (!conf?.enabled) return Promise.resolve()
+  if (!foreground && !force) {
+    return running ?? Promise.resolve()
+  }
   if (running) {
     pullWanted = true
     return running
@@ -339,7 +414,7 @@ const kick = (_wantPull = true) => {
 
 // ---------------- 实时通道 ----------------
 const connect = () => {
-  if (!conf?.enabled || socket) return
+  if (!conf?.enabled || socket || !wantSocket()) return
   const c = conf
   socket = net.openSocket(tconf(), () => {
     socket?.send({ type: 'auth', key: c.key, device: { id: c.device.id, name: c.device.name, platform: PLATFORM, version: appVersion } })
@@ -389,7 +464,7 @@ const connect = () => {
       state.error = reason
       emitState()
     }
-    if (!conf?.enabled || reason == 'closed') return
+    if (!conf?.enabled || reason == 'closed' || !wantSocket()) return
     if (reconnectTimer) clearTimeout(reconnectTimer)
     reconnectTimer = setTimeout(() => { reconnectTimer = null; connect() }, reconnectDelay)
     reconnectDelay = Math.min(60_000, reconnectDelay * 2)
@@ -407,13 +482,15 @@ const stopAll = () => {
   state.devices = []
   if (periodicTimer) clearInterval(periodicTimer)
   periodicTimer = null
+  if (idleTimer) clearTimeout(idleTimer)
+  idleTimer = null
 }
 
 const startAll = () => {
   if (!conf?.enabled) return
   connect()
   periodicTimer ??= setInterval(() => {
-    if (!state.online) connect()
+    if (!state.online && wantSocket()) connect()
     void kick()
     socket?.send({ type: 'ping', t0: Date.now() })
   }, 5 * 60_000)
@@ -531,7 +608,7 @@ export const setDeviceName = (name: string) => {
 export const syncNow = async() => {
   if (!conf) throw new Error('还没有配对同步服务器')
   if (!state.online) connect()
-  await kick()
+  await kick(true)
   if (state.error) throw new Error(state.error)
   return getState()
 }

@@ -60,6 +60,8 @@ module.exports = async({ api, userApi, store, js, log, sleep, waitFor, shot, cli
     check(api['stats.recent']().some(s => s.id == 'kw_1'), 'B sees A listening history in recent')
     check(!!store.load('dislikes', {}).songs?.kw_9, 'B got dislike')
     check(userApi.getList().some(m => m.name == '同步测试音源'), 'B got source script')
+    // B 自己也听一首：两台都有听歌统计（以前两台会互相把对方的统计当成「删掉了」，来回互删停不下来）
+    api['stats.record'](mk(2), 'play')
     // B 修改：删一首、顶部加一首、改名、「我喜欢」加一首
     const t2 = Date.now()
     await R(`
@@ -85,6 +87,8 @@ module.exports = async({ api, userApi, store, js, log, sleep, waitFor, shot, cli
     const songs = await listSongs('同步测试改')
     check(JSON.stringify(songs) == JSON.stringify(['kw_4', 'kw_1', 'kw_3']), 'A got B edits (rename, delete, add on top): ' + JSON.stringify(songs))
     check(JSON.stringify(await listSongs('我喜欢')) == JSON.stringify(['kw_5', 'kw_7', 'kw_8']), 'A got B love')
+    check(api['stats.recent']().some(s => s.id == 'kw_2'), 'A sees B listening history')
+    check(api['stats.recent']().some(s => s.id == 'kw_1'), 'A kept own listening history')
     // A 删掉整个歌单
     const t2 = Date.now()
     await R(`const L = window.__veya.lists; const l = L.lists.find(l => l.name == '同步测试改'); L.removeList(l.id); return 1`)
@@ -116,7 +120,55 @@ module.exports = async({ api, userApi, store, js, log, sleep, waitFor, shot, cli
     check(ok, `${me} received np + cmd from ${other}`)
     const clock = api['sync.clock']()
     check(Math.abs(clock.now - Date.now()) < 2000, 'server clock offset sane: ' + JSON.stringify(clock))
+    // 两台都在线、都没有新改动时不应该一直在同步
+    await sleep(3000)
+    const seen = new Set()
+    const t1 = Date.now()
+    while (Date.now() - t1 < 8000) {
+      const s = state()
+      seen.add(s.lastSync)
+      await sleep(200)
+    }
+    check(seen.size <= 1, `${me}: idle while both online, no sync loop (rounds seen: ${seen.size})`)
+    const recent = api['stats.recent']().map(s => s.id)
+    check(recent.includes('kw_1') && recent.includes('kw_2'), `${me}: both devices' listening history kept: ${JSON.stringify(recent)}`)
     await sleep(3000) // 让对方也收完
+  }
+
+  if (phase == 'HEAL') {
+    // 模拟 0.1.11 的旧设备：把电脑A 自己的听歌统计记录写成「删除」。A 应该保留本地数据，并把记录推回服务器
+    const p = JSON.parse(Buffer.from(code.slice(6).replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf8'))
+    const https = require('https')
+    const raw = (method, path, device, body) => new Promise((resolve, reject) => {
+      const u = new URL(p.u + path)
+      const req = https.request({ hostname: u.hostname, port: u.port, path: u.pathname + u.search, method, rejectUnauthorized: false,
+        headers: { Authorization: `Bearer ${p.k}`, 'X-Veya-Device': device, 'Content-Type': 'application/json' } }, res => {
+        let s = ''
+        res.on('data', d => { s += d })
+        res.on('end', () => { try { resolve({ status: res.statusCode, json: JSON.parse(s) }) } catch { resolve({ status: res.statusCode, json: null }) } })
+      })
+      req.on('error', reject)
+      if (body) req.write(JSON.stringify(body))
+      req.end()
+    })
+    const me = state().deviceId
+    const key = `T/${encodeURIComponent(me)}/kw_1`
+    const st = await raw('GET', '/api/state', 'android-oldphone')
+    const t0 = Date.now()
+    const r = await raw('POST', '/api/push', 'android-oldphone', { store: st.json.store, records: [{ k: key, v: null, t: Date.now() + 500 }] })
+    check(r.status == 200, 'forged tombstone accepted by server: ' + r.status)
+    let back = null
+    while (Date.now() - t0 < 20000) {
+      await sleep(500)
+      const all = await raw('GET', '/api/pull?since=0', 'checker')
+      const rec = (all.json?.records ?? []).find(x => x.k == key)
+      if (rec && rec.v && rec.d == me) { back = rec; break }
+    }
+    check(!!back, 'A pushed its own stat back after a foreign delete')
+    check(api['stats.recent']().some(s => s.id == 'kw_1'), 'A kept kw_1 locally')
+    const n0 = state().lastSync
+    await sleep(4000)
+    check(state().lastSync == n0 || !state().syncing, 'A settled after restore')
   }
 
   if (phase == 'UI' || phase == 'UI0') {

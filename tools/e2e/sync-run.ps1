@@ -39,7 +39,7 @@ try {
   foreach ($p in @($a, $b)) { if (-not $p.WaitForExit(120000)) { $p.Kill(); 'TIMEOUT realtime' } }
   Show 'A3'
   Show 'B2'
-  foreach ($ph in @(@('UI', 'A'), @('UI0', 'C'))) {
+  foreach ($ph in @(@('HEAL', 'A'), @('UI', 'A'), @('UI0', 'C'))) {
     $p = Start-Phase $ph[0] $ph[1]
     if (-not $p.WaitForExit(120000)) { $p.Kill(); "TIMEOUT $($ph[0])" }
     Show $ph[0]

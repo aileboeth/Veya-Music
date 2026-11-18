@@ -139,8 +139,73 @@ object PlayerHub {
             .setAlbumTitle(m.optString("album"))
             .setAlbumArtist(m.optString("artist"))
             .setDisplayTitle(m.optString("title"))
-        m.optString("artwork").takeIf { it.startsWith("http") }?.let { b.setArtworkUri(Uri.parse(it)) }
+            .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
+        val art = m.optString("artwork").takeIf { it.startsWith("http") }
+        if (art != null) {
+            // 封面自己下载好再交给系统：Media3 自带的下载不走应用的代理设置，
+            // 拿不到封面时 vivo 等系统会把通知显示成普通通知，锁屏也不出播放器
+            val data = Artwork.get(art)
+            if (data != null) b.setArtworkData(data, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
+            else b.setArtworkUri(Uri.parse(art))
+        }
         return b.build()
+    }
+
+    /** 封面缓存：最近几首的封面（缩到 512 像素以内的 JPEG） */
+    private object Artwork {
+        private val cache = object : LinkedHashMap<String, ByteArray>(8, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, ByteArray>?) = size > 6
+        }
+        private val loading = HashSet<String>()
+
+        @Synchronized fun get(url: String): ByteArray? = cache[url]
+
+        /** 后台下载，好了在主线程回调（已经有了就不回调） */
+        fun load(url: String, done: () -> Unit) {
+            synchronized(this) {
+                if (cache.containsKey(url) || !loading.add(url)) return
+            }
+            VeyaApp.io.execute {
+                val bytes = try {
+                    val req = okhttp3.Request.Builder().url(url)
+                        .header("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36")
+                        .build()
+                    Net.client("music", true, 20_000).newCall(req).execute().use { r -> if (r.isSuccessful) r.body?.bytes() else null }
+                        ?.let { shrink(it) }
+                } catch (_: Exception) { null }
+                synchronized(this) {
+                    loading.remove(url)
+                    if (bytes != null) cache[url] = bytes
+                }
+                if (bytes != null) VeyaApp.main.post(done)
+            }
+        }
+
+        private fun shrink(raw: ByteArray): ByteArray? {
+            val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size, bounds)
+            if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+            var sample = 1
+            while (bounds.outWidth / (sample * 2) >= 512 && bounds.outHeight / (sample * 2) >= 512) sample *= 2
+            val bmp = android.graphics.BitmapFactory.decodeByteArray(raw, 0, raw.size,
+                android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) ?: return null
+            val max = maxOf(bmp.width, bmp.height)
+            val scaled = if (max > 512) {
+                val k = 512f / max
+                android.graphics.Bitmap.createScaledBitmap(bmp, (bmp.width * k).toInt().coerceAtLeast(1), (bmp.height * k).toInt().coerceAtLeast(1), true)
+            } else bmp
+            val out = java.io.ByteArrayOutputStream()
+            scaled.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, out)
+            return out.toByteArray()
+        }
+    }
+
+    /** 当前歌曲 / 预加载的下一首的封面：下载好后更新通知和锁屏 */
+    private fun loadArtwork(m: JSONObject) {
+        val art = m.optString("artwork").takeIf { it.startsWith("http") } ?: return
+        Artwork.load(art) {
+            if (meta.optString("artwork") == art) updateCurrentMeta()
+        }
     }
 
     private fun item(url: String, id: Long, m: JSONObject) = MediaItem.Builder()
@@ -215,11 +280,13 @@ object PlayerHub {
                 if (a != null && p.mediaItemCount > 0) {
                     nextMeta = a.optJSONObject("meta") ?: JSONObject()
                     p.addMediaItem(item(a.getString("url"), a.optLong("loadId"), nextMeta))
+                    loadArtwork(nextMeta)
                 }
             }
             "meta" -> {
                 meta = a ?: JSONObject()
                 updateCurrentMeta()
+                loadArtwork(meta)
                 LyricOverlay.setTitle("${meta.optString("title")} - ${meta.optString("artist")}")
             }
             "lines" -> {

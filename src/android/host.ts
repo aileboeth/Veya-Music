@@ -266,7 +266,19 @@ applyLockLyric()
 // 通知栏 / 锁屏 / 耳机按键 → 播放器
 onNative('media', (e: any) => { if (e?.action) emit('player:command', e.action) })
 // 应用切到后台 / 回到前台：停掉页面动画省电
+// 同步只在前台进行；后台放歌时保留实时通道（电脑上才能接力这台正在放的歌）
+let appVisible = true
+let nativePlaying = false
 onNative('app', (e: any) => {
-  if (e?.type == 'visible') emit('win:visible', !!e.visible)
+  if (e?.type == 'visible') {
+    emit('win:visible', !!e.visible)
+    appVisible = !!e.visible
+    sync.setActivity({ foreground: appVisible, playing: nativePlaying })
+  }
   if (e?.type == 'pause') flushAll()
+})
+onNative('player', (e: any) => {
+  if (e?.type != 'playing' || !!e.value == nativePlaying) return
+  nativePlaying = !!e.value
+  sync.setActivity({ foreground: appVisible, playing: nativePlaying })
 })

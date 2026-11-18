@@ -6,7 +6,8 @@ html.mobile body {
   overscroll-behavior: none;
 }
 html.mobile ::-webkit-scrollbar { width: 0; height: 0; }
-html.mobile .page { padding: 2px 16px 24px; overscroll-behavior-y: contain; }
+/* 手机页面只上下滚，内容再宽也不让整页左右滑 */
+html.mobile .page { padding: 2px 16px 24px; overscroll-behavior-y: contain; overflow-x: hidden; }
 html.mobile .page-title { font-size: 22px; margin: 6px 0 14px; }
 html.mobile .m-view:not(.r-discover) .page-title { display: none; }
 html.mobile .section-title { font-size: 17px; margin: 24px 0 12px; }

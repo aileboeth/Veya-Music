@@ -80,7 +80,7 @@ const copyCode = async() => copy(await api<string>('sync.code'), '配对码')
 
 const statusText = computed(() => {
   if (!sync.enabled) return '已暂停'
-  if (sync.syncing) return '正在同步…'
+  if (sync.showSyncing) return '正在同步…'
   if (sync.online) return sync.lastSync ? `已连接 · 上次同步 ${timeAgo(sync.lastSync)}` : '已连接'
   return sync.error ? '连接不上' : '正在连接…'
 })
@@ -132,7 +132,7 @@ const groups = [
           <span v-if="sync.error" class="err">{{ sync.error }}</span>
         </div>
         <div class="row gap8">
-          <button class="btn small" :disabled="sync.syncing || !sync.enabled" @click="syncNow"><Icon name="refresh" :size="15" />立即同步</button>
+          <button class="btn small" :disabled="sync.showSyncing || !sync.enabled" @click="syncNow"><Icon name="refresh" :size="15" />立即同步</button>
           <button class="btn small" @click="api('sync.enable', !sync.enabled)">{{ sync.enabled ? '暂停' : '继续' }}</button>
           <button class="btn small danger" @click="unpair">断开</button>
         </div>
@@ -173,7 +173,7 @@ const groups = [
 </template>
 
 <style scoped>
-section { max-width: 860px; margin-bottom: 30px; }
+section { max-width: 860px; min-width: 0; margin-bottom: 30px; }
 h2 { font-size: 17px; margin: 0 0 12px; }
 h3 { font-size: 14px; margin: 18px 0 10px; color: var(--text2); font-weight: 600; }
 .hint { color: var(--text2); font-size: 13px; line-height: 1.75; margin: 0 0 14px; user-select: text; }
@@ -186,7 +186,7 @@ h3 { font-size: 14px; margin: 18px 0 10px; color: var(--text2); font-weight: 600
 .item span, .sub { font-size: 12px; color: var(--text3); }
 .flex1 { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
 .w100 { width: 100%; }
-.cmd { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 10px; background: var(--hover); user-select: text; }
+.cmd { display: flex; align-items: center; gap: 8px; min-width: 0; max-width: 100%; padding: 6px 6px 6px 12px; border-radius: 10px; background: var(--hover); user-select: text; }
 .cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; color: var(--text); }
 .input.flex1 { display: block; height: 34px; }
 .status .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 8px; background: #f5b301; vertical-align: 1px; }
@@ -206,6 +206,8 @@ h3 { font-size: 14px; margin: 18px 0 10px; color: var(--text2); font-weight: 600
   .status .flex1 { flex-basis: 100%; }
   .status .row { width: 100%; }
   .status .row .btn { flex: 1; }
-  .cmd code { font-size: 11px; }
+  /* 手机上命令换行显示：一整行不换行会把整个设置页撑宽，页面能左右滑 */
+  .cmd code { font-size: 11px; white-space: pre-wrap; word-break: break-all; overflow: visible; line-height: 1.5; }
 }
+:root.mobile .cmd code { font-size: 11px; white-space: pre-wrap; word-break: break-all; overflow: visible; line-height: 1.5; }
 </style>

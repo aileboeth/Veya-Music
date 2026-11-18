@@ -28,7 +28,36 @@ class PlaybackService : MediaSessionService() {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
         session = MediaSession.Builder(this, JsPlayer(PlayerHub.player)).setSessionActivity(open).build()
-        setMediaNotificationProvider(DefaultMediaNotificationProvider.Builder(this).build().apply { setSmallIcon(R.drawable.ic_notify) })
+        ensureChannel()
+        setMediaNotificationProvider(
+            DefaultMediaNotificationProvider.Builder(this)
+                .setChannelId(CHANNEL)
+                .setChannelName(R.string.playback_channel)
+                .build()
+                .apply { setSmallIcon(R.drawable.ic_notify) },
+        )
+    }
+
+    /**
+     * 播放通知用自己的渠道：Media3 默认建的是「低」重要性（静默通知），
+     * 不少系统（vivo / OPPO 等）锁屏上不显示静默通知。这里用「默认」重要性但不响铃不振动，锁屏完整显示。
+     */
+    private fun ensureChannel() {
+        if (android.os.Build.VERSION.SDK_INT < 26) return
+        val nm = getSystemService(android.app.NotificationManager::class.java) ?: return
+        if (nm.getNotificationChannel(CHANNEL) == null) {
+            val ch = android.app.NotificationChannel(CHANNEL, getString(R.string.playback_channel), android.app.NotificationManager.IMPORTANCE_DEFAULT).apply {
+                description = getString(R.string.playback_channel_desc)
+                setSound(null, null)
+                enableVibration(false)
+                enableLights(false)
+                setShowBadge(false)
+                lockscreenVisibility = android.app.Notification.VISIBILITY_PUBLIC
+            }
+            nm.createNotificationChannel(ch)
+        }
+        // 旧版本建的 Media3 默认渠道不再使用
+        if (nm.getNotificationChannel(OLD_CHANNEL) != null) nm.deleteNotificationChannel(OLD_CHANNEL)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
@@ -69,6 +98,8 @@ class PlaybackService : MediaSessionService() {
     }
 
     companion object {
+        private const val CHANNEL = "veya_playback"
+        private const val OLD_CHANNEL = "default_channel_id"
         var instance: PlaybackService? = null
             private set
 

@@ -26,6 +26,11 @@ export interface Domain {
   prefixes: string[]
   storeKeys: string[]
   project(ctx: Ctx): Map<string, ProjEntry>
+  /**
+   * 这条记录是不是本机「管」的（project 只会生成这些）。不填 = 这一类的记录都归本机管。
+   * 听歌统计每台设备只写自己的：别的设备的记录不在 project 里，但不能当成本机删掉了
+   */
+  owns?(ctx: Ctx, k: string): boolean
   /** 返回改动过的本地数据键（用来通知界面重新读取） */
   apply(ctx: Ctx, changes: Change[]): string[]
 }
@@ -136,6 +141,7 @@ const stats: Domain = {
     for (const [id, s] of Object.entries<any>(st?.songs ?? {})) out.set(`T/${enc(ctx.device)}/${enc(id)}`, { v: s })
     return out
   },
+  owns: (ctx, k) => k.startsWith(`T/${enc(ctx.device)}/`),
   apply(ctx, changes) {
     const remote = load<Record<string, Record<string, any>>>('statsRemote', {}) ?? {}
     let own: any = null
