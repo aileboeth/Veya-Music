@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { api, SOURCES } from '../api'
 import Icon from '../components/Icon.vue'
 import ListCard from '../components/ListCard.vue'
+import ListFilterBar from '../components/ListFilterBar.vue'
 import Page from '../components/Page.vue'
+import { applyListFilter, isFiltering, newListFilter } from '../listFilter'
 import { go, openImport, promptDialog, toast } from '../ui'
 
 defineProps<{ params: Record<string, any> }>()
@@ -63,6 +65,18 @@ const setTag = (t: { id: any, name: string } | null) => {
   reload()
 }
 
+// 排序 / 筛选只作用于已经加载的歌单；筛掉太多时自动多加载几页（每次改条件最多 8 页）
+const filter = newListFilter()
+const shown = computed(() => applyListFilter(state.list, filter))
+let autoPages = 0
+watch(() => [filter.sort, filter.minPlay], () => { autoPages = 0; fillUp() })
+const fillUp = () => {
+  if (!isFiltering(filter) || state.loading || state.done || state.error || shown.value.length >= 24 || autoPages >= 8) return
+  autoPages++
+  void loadMore().then(() => setTimeout(fillUp, 50))
+}
+watch(() => state.list.length, () => { if (filter.minPlay) setTimeout(fillUp, 50) })
+
 const onScroll = (e: Event) => {
   const el = e.target as HTMLElement
   if (el.scrollHeight - el.scrollTop - el.clientHeight < 500) void loadMore()
@@ -107,10 +121,13 @@ const openByLink = async() => {
       </div>
     </div>
 
-    <div class="card-grid"><ListCard v-for="l in state.list" :key="l.id" :list="{ ...l, source }" /></div>
+    <ListFilterBar :filter="filter" :shown="shown.length" :total="state.list.length" />
+
+    <div class="card-grid"><ListCard v-for="l in shown" :key="l.id" :list="{ ...l, source }" /></div>
     <div v-if="state.loading" class="center-box" :style="state.list.length ? 'padding:24px' : ''"><span class="spinner" /></div>
     <div v-else-if="state.error" class="center-box">{{ state.error }}<button class="btn" @click="loadMore">重试</button></div>
     <div v-else-if="!state.list.length && state.page" class="center-box">这个分类下暂时没有歌单</div>
+    <div v-else-if="state.list.length && !shown.length" class="center-box">已加载的歌单里没有播放量这么高的，换个分类或者降低一点试试</div>
   </Page>
 </template>
 

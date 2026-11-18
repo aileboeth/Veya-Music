@@ -104,6 +104,11 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    fun repostNotification() {
+        val s = session ?: return
+        try { onUpdateNotification(s, true) } catch (_: Exception) {}
+    }
+
     /** 页面告诉我们「喜欢」状态变了：换爱心图标（系统随之重画通知） */
     fun refreshNotification() {
         val liked = PlayerHub.notifyInfo().liked
@@ -167,6 +172,18 @@ class PlaybackService : MediaSessionService() {
         override fun seekToNextMediaItem() = send("next")
         override fun seekToPrevious() = send("prev")
         override fun seekToPreviousMediaItem() = send("prev")
+
+        /**
+         * 通知被划掉时 Media3 会发「停止」。vivo 等系统允许划掉正在播放的媒体通知，一划歌就停了：
+         * 正在播放时不停，把通知重新显示出来；暂停时才真的停掉、收起通知
+         */
+        override fun stop() {
+            if (isPlaying) {
+                VeyaApp.main.post { instance?.repostNotification() }
+                return
+            }
+            super.stop()
+        }
 
         private fun send(action: String) = WebHost.emit("media", JSONObject().put("action", action))
     }

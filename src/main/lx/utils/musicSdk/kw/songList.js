@@ -133,6 +133,9 @@ export default {
   filterList(rawData) {
     return rawData.map(item => ({
       play_count: this.formatPlayCount(item.listencnt),
+      // Veya：原始数字，用来按播放量 / 收藏量排序、筛选
+      play_num: Number(item.listencnt) || undefined,
+      collect_num: Number(item.favorcnt) || undefined,
       id: `digest-${item.digest}__${item.id}`,
       author: item.uname,
       name: item.name,
@@ -153,6 +156,8 @@ export default {
         if (!allowedTypes.includes(item.type)) return
         list.push({
           play_count: item.play_count && this.formatPlayCount(item.listencnt),
+          play_num: Number(item.listencnt) || undefined,
+          collect_num: Number(item.favorcnt) || undefined,
           id: `digest-${item.digest}__${item.id}`,
           author: item.uname,
           name: item.name,
@@ -468,6 +473,8 @@ export default {
           list: body.abslist.map(item => {
             return {
               play_count: this.formatPlayCount(item.playcnt),
+              play_num: Number(item.playcnt) || undefined,
+              collect_num: Number(item.favorcnt ?? item.favcnt) || undefined,
               id: String(item.playlistid),
               author: decodeName(item.nickname),
               name: decodeName(item.name),

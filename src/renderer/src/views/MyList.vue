@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { api, sourceName } from '../api'
+import { computed, onActivated, onMounted, ref } from 'vue'
+import { api, sourceName, type Song } from '../api'
 import Cover from '../components/Cover.vue'
 import Icon from '../components/Icon.vue'
 import Page from '../components/Page.vue'
@@ -14,7 +14,47 @@ import { confirmDialog, go, openMenu, openSyncPreview, promptDialog, toast } fro
 const props = defineProps<{ params: Record<string, any> }>()
 
 const list = computed(() => getList(props.params.id))
-const songs = computed(() => list.value?.songs ?? [])
+const allSongs = computed(() => list.value?.songs ?? [])
+
+// ---- 排序 / 筛选：只影响显示和播放顺序，不改歌单本身 ----
+const SORTS = [
+  { id: 'default', name: '默认顺序' },
+  { id: 'plays', name: '我听得最多' },
+  { id: 'recent', name: '最近听过' },
+  { id: 'name', name: '歌名' },
+  { id: 'singer', name: '歌手' },
+  { id: 'duration', name: '时长' },
+] as const
+const counts = ref<Record<string, { p: number, l: number }>>({})
+const loadCounts = () => void api<Record<string, { p: number, l: number }>>('stats.counts').then(r => { counts.value = r ?? {} }).catch(() => {})
+onMounted(loadCounts)
+onActivated(loadCounts)
+const heard = ref<'all' | 'heard' | 'new'>('all')
+const secs = (s: Song) => {
+  const m = /^(\d+):(\d+)/.exec(s.interval ?? '')
+  return m ? +m[1] * 60 + +m[2] : 0
+}
+const collator = new Intl.Collator('zh-CN', { numeric: true })
+const songs = computed(() => {
+  const c = counts.value
+  let arr = allSongs.value
+  if (heard.value == 'heard') arr = arr.filter(s => c[s.id]?.p)
+  else if (heard.value == 'new') arr = arr.filter(s => !c[s.id]?.p)
+  const mode = settings.myListSort ?? 'default'
+  if (mode == 'default') return arr
+  const out = arr.slice()
+  if (mode == 'plays') out.sort((a, b) => (c[b.id]?.p ?? 0) - (c[a.id]?.p ?? 0) || (c[b.id]?.l ?? 0) - (c[a.id]?.l ?? 0))
+  else if (mode == 'recent') out.sort((a, b) => (c[b.id]?.l ?? 0) - (c[a.id]?.l ?? 0))
+  else if (mode == 'name') out.sort((a, b) => collator.compare(a.name, b.name))
+  else if (mode == 'singer') out.sort((a, b) => collator.compare(a.singer, b.singer) || collator.compare(a.name, b.name))
+  else if (mode == 'duration') out.sort((a, b) => secs(b) - secs(a))
+  return out
+})
+const sortName = computed(() => SORTS.find(s => s.id == (settings.myListSort ?? 'default'))?.name ?? '默认顺序')
+const sortMenu = (e: MouseEvent) => openMenu(e, SORTS.map(s => ({
+  label: (s.id == (settings.myListSort ?? 'default') ? '✓ ' : '　 ') + s.name,
+  action: () => { settings.myListSort = s.id; if (s.id == 'plays' || s.id == 'recent') loadCounts() },
+})))
 const queueSource = computed(() => ({ type: 'mylist', name: list.value?.name ?? '', route: { name: 'mylist', params: { id: props.params.id } } }))
 const cover = computed(() => songs.value.find(s => s.img)?.img)
 const syncing = ref(false)
@@ -90,11 +130,32 @@ const more = (e: MouseEvent) => {
       </div>
     </div>
     <SongList :songs="songs" :source="queueSource" :list-id="list.id" show-source :locate-key="params._locate">
+      <template #toolbar>
+        <button class="btn small" title="只影响显示和播放顺序，不改歌单本身" @click="sortMenu"><Icon name="sort" :size="14" />{{ sortName }}<Icon name="down" :size="12" /></button>
+        <div class="tabs small heard">
+          <button :class="{ on: heard == 'all' }" @click="heard = 'all'">全部</button>
+          <button :class="{ on: heard == 'heard' }" @click="heard = 'heard'">听过的</button>
+          <button :class="{ on: heard == 'new' }" @click="heard = 'new'">没听过</button>
+        </div>
+        <span v-if="heard != 'all'" class="dim heard-n">{{ songs.length }} / {{ allSongs.length }}</span>
+      </template>
       <template #empty>
-        <div>这个歌单还没有歌曲</div>
-        <div>在任意歌曲上点 <b>♡</b> 或右键「添加到歌单」就能收进来</div>
+        <template v-if="allSongs.length">
+          <div>{{ heard == 'heard' ? '这个歌单里的歌你还都没听过' : '这个歌单里的歌你都听过了' }}</div>
+          <button class="btn small" @click="heard = 'all'">显示全部 {{ allSongs.length }} 首</button>
+        </template>
+        <template v-else>
+          <div>这个歌单还没有歌曲</div>
+          <div>在任意歌曲上点 <b>♡</b> 或右键「添加到歌单」就能收进来</div>
+        </template>
       </template>
     </SongList>
   </Page>
   <div v-else class="center-box">歌单不存在或已被删除</div>
 </template>
+
+<style scoped>
+.tabs.small { padding: 3px; border-radius: 10px; }
+.tabs.small button { height: 26px; padding: 0 11px; font-size: 12.5px; }
+.heard-n { font-size: 12px; }
+</style>

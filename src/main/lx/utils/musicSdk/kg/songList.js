@@ -244,6 +244,9 @@ export default {
   filterList(rawData) {
     return rawData.map(item => ({
       play_count: item.total_play_count || formatPlayCount(item.play_count),
+      // Veya：原始数字，用来按播放量 / 收藏量排序、筛选
+      play_num: Number(item.play_count) || undefined,
+      collect_num: Number(item.collectcount ?? item.collect_count ?? item.collect_total) || undefined,
       id: 'id_' + item.specialid,
       author: item.nickname,
       name: item.specialname,
@@ -1006,6 +1009,8 @@ export default {
           list: body.data.info.map(item => {
             return {
               play_count: formatPlayCount(item.playcount),
+              play_num: Number(item.playcount) || undefined,
+              collect_num: Number(item.collectcount ?? item.collect_count) || undefined,
               id: 'id_' + item.specialid,
               author: item.nickname,
               name: item.specialname,

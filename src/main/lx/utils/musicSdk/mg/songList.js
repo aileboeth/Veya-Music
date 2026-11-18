@@ -321,6 +321,8 @@ export default {
       const playCount = parseInt(item.playNum)
       list.push({
         play_count: isNaN(playCount) ? 0 : formatPlayCount(playCount),
+        play_num: isNaN(playCount) ? undefined : playCount,
+        collect_num: Number(item.keepNum ?? item.collectNum ?? item.favoriteNum) || undefined,
         id: item.id,
         author: item.userName,
         name: item.name,

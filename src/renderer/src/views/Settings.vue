@@ -3,6 +3,7 @@ import { nextTick, onActivated, onBeforeUnmount, onMounted, reactive, ref, watch
 import { api, on, QUALITYS, SOURCES } from '../api'
 import Icon from '../components/Icon.vue'
 import Page from '../components/Page.vue'
+import Slider from '../components/Slider.vue'
 import SyncSettings from '../components/SyncSettings.vue'
 import { importLists } from '../lists'
 import { player, toggleDesktopLyric } from '../player'
@@ -337,6 +338,20 @@ const placeLyric = (where: string) => void api('lyric.place', where)
         </div>
       </div>
       <div class="item">
+        <div><b>文字透明度</b><span>调低一点，歌词就不那么挡后面的内容</span></div>
+        <div class="row gap8 slider-row">
+          <Slider class="set-slider" :value="(settings.desktopLyric.textAlpha ?? 1) - 0.2" :max="0.8" @input="setLyric({ textAlpha: Math.round((0.2 + $event) * 100) / 100 })" @change="setLyric({ textAlpha: Math.round((0.2 + $event) * 100) / 100 })" />
+          <span class="num pct">{{ Math.round((settings.desktopLyric.textAlpha ?? 1) * 100) }}%</span>
+        </div>
+      </div>
+      <div class="item">
+        <div><b>底板</b><span>歌词下面垫一条半透明深色底，浅色背景上也看得清；拉到最左就是没有底板</span></div>
+        <div class="row gap8 slider-row">
+          <Slider class="set-slider" :value="settings.desktopLyric.bgAlpha ?? 0" :max="0.85" @input="setLyric({ bgAlpha: Math.round($event * 100) / 100 })" @change="setLyric({ bgAlpha: Math.round($event * 100) / 100 })" />
+          <span class="num pct">{{ (settings.desktopLyric.bgAlpha ?? 0) > 0.01 ? Math.round((settings.desktopLyric.bgAlpha ?? 0) / 0.85 * 100) + '%' : '无' }}</span>
+        </div>
+      </div>
+      <div class="item">
         <div><b>动效</b><span>逐字填色：唱到哪个字，哪个字被点亮并轻轻抬起；逐字跳动：每个字开唱时跳一下</span></div>
         <div class="tabs">
           <button :class="{ on: (settings.desktopLyric.effect ?? 'fill') == 'fill' }" @click="setLyric({ effect: 'fill' })">逐字填色</button>
@@ -447,6 +462,9 @@ h2 { font-size: 17px; margin: 0 0 12px; }
 .item span { font-size: 12px; color: var(--text3); }
 .path { user-select: text; word-break: break-all; }
 .num { width: 28px; text-align: center; font-size: 14px !important; color: var(--text) !important; }
+.slider-row { flex: none; align-items: center; }
+.set-slider { width: 170px; }
+.num.pct { width: 44px; text-align: right; }
 .empty-box { padding: 26px; border-radius: 12px; border: 1.500px dashed var(--border); color: var(--text3); text-align: center; }
 .source { display: flex; align-items: center; gap: 6px; padding: 10px 14px 10px 10px; border-radius: 12px; background: var(--card); border: 1px solid var(--border); margin-bottom: 8px; }
 .source.disabled .s-info { opacity: .5; }

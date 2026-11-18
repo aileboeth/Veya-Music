@@ -232,6 +232,9 @@ export default {
     // console.log(rawData)
     return rawData.map(item => ({
       play_count: formatPlayCount(item.playCount),
+      // Veya：原始数字，用来按播放量 / 收藏量排序、筛选
+      play_num: Number(item.playCount) || undefined,
+      collect_num: Number(item.subscribedCount ?? item.bookCount) || undefined,
       id: String(item.id),
       author: item.creator.nickname,
       name: item.name,

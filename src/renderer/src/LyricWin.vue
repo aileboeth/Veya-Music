@@ -135,7 +135,8 @@ const onUp = () => {
       <Icon name="lock" :size="15" /> 解锁
     </button>
 
-    <div class="lines" :style="{ fontSize: conf.fontSize + 'px' }">
+    <div v-if="(conf.bgAlpha ?? 0) > 0.01" class="band" :style="{ background: `rgba(16, 20, 32, ${conf.bgAlpha})` }" />
+    <div class="lines" :style="{ fontSize: conf.fontSize + 'px', '--ta': conf.textAlpha ?? 1 }">
       <!-- 还没有歌词（或没开始唱）：显示歌名 -->
       <template v-if="!hasLine">
         <div class="row main">
@@ -194,8 +195,11 @@ button { font: inherit; border: 0; background: none; color: inherit; cursor: poi
 .lyric-win { position: relative; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; border-radius: 14px; transition: background .2s; cursor: move; padding: 36px 14px 0; }
 .lyric-win.hover { background: rgba(18, 20, 32, 0.5); }
 .lyric-win.locked { cursor: default; }
-.lines { width: 100%; text-align: center; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 1px rgba(0, 0, 0, 0.5)); transition: opacity .3s; }
-.paused .lines { opacity: .82; }
+.lines { position: relative; width: 100%; box-sizing: border-box; text-align: center; filter: drop-shadow(0 2px 3px rgba(0, 0, 0, 0.6)) drop-shadow(0 0 1px rgba(0, 0, 0, 0.5)); transition: opacity .3s, background .3s; opacity: var(--ta, 1); }
+.paused .lines { opacity: calc(var(--ta, 1) * .82); }
+/* 底板：浅色桌面上也看得清；深浅在设置里调，和文字透明度互不影响 */
+.band { position: absolute; top: 36px; left: 8px; right: 8px; bottom: 0; border-radius: 12px; pointer-events: none; transition: opacity .2s; }
+.lyric-win.hover .band { opacity: 0; }
 .a-left .lines { text-align: left; }
 .a-right .lines { text-align: right; }
 

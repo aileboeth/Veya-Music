@@ -100,6 +100,13 @@ export const recentSongs = () => {
   return stats.recent.map(r => stats.songs[r.id] && { ...stats.songs[r.id].s, _playedAt: r.t }).filter(Boolean)
 }
 
+/** 每首歌听了几次、最近一次什么时候（所有设备合计）：我的歌单按「听得最多 / 最近听过」排序用 */
+export const songCounts = () => {
+  const out: Record<string, { p: number, l: number }> = {}
+  for (const [id, s] of Object.entries(mergedStats().songs)) if (s?.plays || s?.last) out[id] = { p: s.plays ?? 0, l: s.last ?? 0 }
+  return out
+}
+
 export const clearStats = () => {
   save('stats', { songs: {}, recent: [] }, true)
   save('statsRemote', {}, true)

@@ -285,6 +285,7 @@ const api: Record<string, (...args: any[]) => any> = {
 
   'stats.record': rec.record,
   'stats.recent': rec.recentSongs,
+  'stats.counts': rec.songCounts,
   'stats.clear': rec.clearStats,
   'rec.daily': rec.daily,
   'rec.radio': rec.radio,

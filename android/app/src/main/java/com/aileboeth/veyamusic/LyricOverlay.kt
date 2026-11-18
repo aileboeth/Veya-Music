@@ -149,6 +149,10 @@ object LyricOverlay {
         private var colors = intArrayOf(0xFF12F1E4.toInt(), 0xFF2A62FF.toInt(), 0xFFA23BF6.toInt())
         private var fontSize = 22f
         private var effect = "fill"
+        /** 文字不透明度 0.2–1；底板深浅 0（没有底板）–0.85 */
+        private var textAlpha = 1f
+        private var bgAlpha = 0f
+        private val band = Paint(Paint.ANTI_ALIAS_FLAG)
 
         private val base = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.WHITE; alpha = 150; setShadowLayer(dp(2f), 0f, dp(1f), 0x99000000.toInt()) }
         private val lit = Paint(Paint.ANTI_ALIAS_FLAG)
@@ -161,6 +165,12 @@ object LyricOverlay {
         fun applyConf(c: JSONObject) {
             fontSize = c.optDouble("fontSize", 22.0).toFloat().coerceIn(14f, 40f)
             effect = c.optString("effect", "fill")
+            textAlpha = c.optDouble("textAlpha", 1.0).toFloat().coerceIn(0.2f, 1f)
+            bgAlpha = c.optDouble("bgAlpha", 0.0).toFloat().coerceIn(0f, 0.85f)
+            base.alpha = (150 * textAlpha).toInt()
+            small.alpha = (200 * textAlpha).toInt()
+            lit.alpha = (255 * textAlpha).toInt()
+            band.color = Color.argb((bgAlpha * 255).toInt(), 16, 20, 32)
             colors = when (c.optString("color", "aurora")) {
                 "white" -> intArrayOf(Color.WHITE, Color.WHITE)
                 "gold" -> intArrayOf(0xFFFFE08A.toInt(), 0xFFFFB03B.toInt())
@@ -206,6 +216,7 @@ object LyricOverlay {
             val w = width.toFloat()
             val pad = dp(16f)
             if (controls) canvas.drawRoundRect(RectF(dp(8f), 0f, w - dp(8f), height.toFloat()), dp(16f), dp(16f), panel)
+            else if (bgAlpha > 0.01f) canvas.drawRoundRect(RectF(dp(8f), 0f, w - dp(8f), height.toFloat()), dp(16f), dp(16f), band)
             val line = cur
             val text = line?.text?.takeIf { it.isNotBlank() } ?: title.ifBlank { "Veya Music" }
             var size = sp(fontSize)

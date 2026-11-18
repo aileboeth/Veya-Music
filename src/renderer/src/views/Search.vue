@@ -2,7 +2,9 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { api, SOURCES, type Song } from '../api'
 import ListCard from '../components/ListCard.vue'
+import ListFilterBar from '../components/ListFilterBar.vue'
 import Page from '../components/Page.vue'
+import { applyListFilter, isFiltering, newListFilter } from '../listFilter'
 import SongList from '../components/SongList.vue'
 import { go } from '../ui'
 import { clearSearchHistory, searchHistory } from '../history'
@@ -79,6 +81,18 @@ onMounted(() => {
   void api<string[]>('search.hot').then(r => { hot.value = r }).catch(() => {})
 })
 
+// 歌单结果：按播放量 / 收藏量排序、只看播放量够多的（只作用于已加载的结果，筛掉太多时自动多加载几页）
+const listFilter = newListFilter()
+const shownLists = computed(() => type.value == 'list' ? applyListFilter(state.value.list, listFilter) : [])
+let autoPages = 0
+const fillUp = () => {
+  const st = state.value
+  if (type.value != 'list' || !isFiltering(listFilter) || st.loading || st.done || st.error || shownLists.value.length >= 24 || autoPages >= 6) return
+  autoPages++
+  void loadMore().then(() => setTimeout(fillUp, 50))
+}
+watch(() => [listFilter.sort, listFilter.minPlay, key.value, props.params.text], () => { autoPages = 0; setTimeout(fillUp, 50) })
+
 const queueSource = computed(() => ({ type: 'search', name: `搜索：${props.params.text}`, route: { name: 'search', params: { text: props.params.text } } }))
 const onScroll = (e: Event) => {
   const el = e.target as HTMLElement
@@ -101,8 +115,10 @@ const onScroll = (e: Event) => {
         </div>
       </div>
 
+      <ListFilterBar v-if="type == 'list' && state.list.length" :filter="listFilter" :shown="shownLists.length" :total="state.list.length" />
       <SongList v-if="type == 'music' && state.list.length" :songs="state.list" :source="queueSource" show-source :locate-key="params._locate" />
-      <div v-else-if="type == 'list' && state.list.length" class="card-grid"><ListCard v-for="l in state.list" :key="l.source + l.id" :list="l" /></div>
+      <div v-else-if="type == 'list' && state.list.length" class="card-grid"><ListCard v-for="l in shownLists" :key="l.source + l.id" :list="l" /></div>
+      <div v-if="type == 'list' && state.list.length && !shownLists.length && !state.loading" class="center-box">已加载的歌单里没有播放量这么高的，降低一点试试</div>
 
       <div v-if="state.loading" class="center-box" :style="state.list.length ? 'padding:24px' : ''"><span class="spinner" /></div>
       <div v-else-if="state.error" class="center-box">{{ state.error }}<button class="btn" @click="loadMore">重试</button></div>

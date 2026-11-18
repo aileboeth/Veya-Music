@@ -197,6 +197,9 @@ export default {
     return {
       list: content.v_item.map(({ basic }) => ({
         play_count: formatPlayCount(basic.play_cnt),
+        // Veya：原始数字，用来按播放量 / 收藏量排序、筛选
+        play_num: Number(basic.play_cnt) || undefined,
+        collect_num: Number(basic.fav_cnt ?? basic.favorcnt ?? basic.fav_num) || undefined,
         id: String(basic.tid),
         author: basic.creator.nick,
         name: basic.title,
@@ -411,6 +414,8 @@ export default {
           list: body.data.list.map(item => {
             return {
               play_count: formatPlayCount(item.listennum),
+              play_num: Number(item.listennum) || undefined,
+              collect_num: Number(item.favorcnt ?? item.fav_cnt) || undefined,
               id: String(item.dissid),
               author: decodeName(item.creator.name),
               name: decodeName(item.dissname),
