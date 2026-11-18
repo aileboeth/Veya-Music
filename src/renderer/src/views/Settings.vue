@@ -12,6 +12,7 @@ import { alertDialog, confirmDialog, openImport, openSheet, toast } from '../ui'
 import { isAndroid } from '../platform'
 import { sleepLeft, sleepState } from '../sleep'
 import { checkUpdate, installUpdate, showChangelog, update, updateText } from '../update'
+import { showDisclaimer } from '../disclaimer'
 
 const props = defineProps<{ params: Record<string, any> }>()
 
@@ -434,6 +435,7 @@ const placeLyric = (where: string) => void api('lyric.place', where)
           <button v-if="update.status == 'downloaded'" class="btn small primary" @click="installUpdate">重启更新</button>
           <button v-else class="btn small" :disabled="['checking', 'available', 'downloading', 'unsupported'].includes(update.status)" @click="checkUpdate">检查更新</button>
           <button class="btn small" @click="showChangelog">更新日志</button>
+          <button class="btn small" @click="showDisclaimer">免责声明</button>
         </div>
       </div>
       <div v-if="update.notes && ['available', 'downloading', 'downloaded'].includes(update.status)" class="notes"><b>{{ update.version }} 更新内容</b>{{ update.notes }}</div>
@@ -446,7 +448,7 @@ const placeLyric = (where: string) => void api('lyric.place', where)
         数据保存在：<span class="path">{{ appInfo.dataDir }}</span><br>
         各平台的搜索、歌单、榜单、歌词接口使用了开源项目
         <a @click="api('app.open', 'https://github.com/lyswhut/lx-music-desktop')">lx-music-desktop</a>（Apache-2.0）的 musicSdk，并兼容它的自定义音源脚本接口，感谢原作者。<br>
-        本软件不提供任何音频内容，播放链接完全来自你自行导入的音源脚本。
+        本软件仅供学习和技术交流使用，不提供任何音频内容：在线数据来自各平台公开的网络接口，播放链接完全来自你自行导入的音源脚本，均为网络来源，与作者无关。<a @click="showDisclaimer">查看完整的免责声明</a>
       </p>
     </section>
   </Page>

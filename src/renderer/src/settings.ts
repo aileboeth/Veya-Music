@@ -13,6 +13,8 @@ export const settings = reactive({
   proxy: { mode: 'system', host: '127.0.0.1', port: 7890, scope: 'update' } as { mode: 'system' | 'direct' | 'custom', host: string, port: number, scope: 'update' | 'all' },
   /** 上次运行的版本号，用来在升级后显示更新内容 */
   lastVersion: '',
+  /** 本机是否点过免责声明的「我已阅读并同意」（不参与多设备同步，每台设备各自确认一次） */
+  disclaimerAccepted: false,
   volume: 0.8,
   closeToTray: true,
   autoUpdate: true,

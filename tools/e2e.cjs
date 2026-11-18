@@ -36,6 +36,8 @@ module.exports = async({ app, api, userApi, music, qishui, store, importSourceFi
   try {
     await waitFor(`document.querySelector('.sidebar')`)
     await sleep(800)
+    // 全新数据目录第一次启动会弹免责声明：默认替测试点掉；要测这个弹窗时设 VEYA_E2E_DISCLAIMER=1
+    if (!process.env.VEYA_E2E_DISCLAIMER && await clickText('.modal .btn.primary', '我已阅读并同意')) await sleep(400)
     const steps = require(process.env.VEYA_E2E_STEPS)
     await steps({ app, api, userApi, music, qishui, store, importSourceFiles, win, getLyricWin, js, shot, waitFor, click, clickText, sleep, log })
     log('DONE')

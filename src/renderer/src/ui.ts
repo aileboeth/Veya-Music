@@ -85,7 +85,7 @@ export const confirmDialog = (title: string, message = '', opts: { okText?: stri
   openDialog({ type: 'confirm', title, message, ...opts }).then(v => !!v)
 export const promptDialog = (title: string, value = '', placeholder = ''): Promise<string | null> =>
   openDialog({ type: 'prompt', title, value, placeholder }).then(v => typeof v == 'string' ? v : null)
-export const alertDialog = (title: string, message = '') => openDialog({ type: 'alert', title, message })
+export const alertDialog = (title: string, message = '', opts: { okText?: string } = {}) => openDialog({ type: 'alert', title, message, ...opts })
 export const closeDialog = (value: any) => {
   dialog.show = false
   dialog.resolve?.(value)

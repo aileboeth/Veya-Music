@@ -2,6 +2,7 @@
 import { reactive } from 'vue'
 import { api, on } from './api'
 import changelog from './changelog.json'
+import { ensureDisclaimer } from './disclaimer'
 import { settings } from './settings'
 import { alertDialog, confirmDialog, toast } from './ui'
 
@@ -30,14 +31,16 @@ export const initUpdate = async() => {
     if (s.status == 'downloaded' && !wasDownloaded) toast(`新版本 ${s.version} 已下载好，点左下角「重启更新」查看更新内容并安装`, 'success', 6000)
   })
 
-  // 升级后的第一次启动：显示这次更新了什么
+  // 升级后的第一次启动：显示这次更新了什么（还没同意免责声明的话先显示免责声明，关掉后再显示更新内容）
   const { version } = await api<{ version: string }>('app.info')
   const last = settings.lastVersion
-  if (last && cmpVersion(version, last) > 0) {
-    const text = changelogText(last, version) || await api<string>('update.savedNotes', version).catch(() => '')
-    if (text) void alertDialog(`已更新到 ${version}`, text)
-  }
+  let text = ''
+  if (last && cmpVersion(version, last) > 0) text = changelogText(last, version) || await api<string>('update.savedNotes', version).catch(() => '')
   if (last != version) settings.lastVersion = version
+  void (async() => {
+    await ensureDisclaimer()
+    if (text) void alertDialog(`已更新到 ${version}`, text)
+  })()
 }
 
 export const checkUpdate = async() => {
